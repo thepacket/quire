@@ -1,0 +1,279 @@
+"""Unit table and unit helpers built on sympy.physics.units.
+
+Design notes
+------------
+* Every unit is a sympy Quantity, so units live inside the same algebra as
+  everything else. A definition like ``F = m a`` keeps its units through any
+  later symbolic manipulation.
+* ``strip_units`` is the bridge to numerics (plotting, nsolve): it converts to
+  SI base units and replaces each remaining Quantity by 1.
+"""
+from __future__ import annotations
+
+import re
+
+import sympy as sp
+from sympy.physics import units as u
+from sympy.physics.units import Quantity, convert_to
+from sympy.physics.units.systems import SI
+
+from .errors import UnitError
+
+BASE_UNITS = [u.meter, u.kilogram, u.second, u.ampere, u.kelvin, u.mole, u.candela]
+ANGLE_UNITS = {u.degree, u.radian}
+
+
+def _prefixed(name: str, abbrev: str, factor, base) -> Quantity:
+    q = Quantity(name, abbrev=abbrev)
+    q.set_global_relative_scale_factor(factor, base)
+    return q
+
+
+# Derived/prefixed units that sympy does not ship with a short name.
+kN = _prefixed("kilonewton", "kN", 1000, u.newton)
+kJ = _prefixed("kilojoule", "kJ", 1000, u.joule)
+MJ = _prefixed("megajoule", "MJ", 10**6, u.joule)
+kW = _prefixed("kilowatt", "kW", 1000, u.watt)
+MW = _prefixed("megawatt", "MW", 10**6, u.watt)
+kPa = _prefixed("kilopascal", "kPa", 1000, u.pascal)
+MPa = _prefixed("megapascal", "MPa", 10**6, u.pascal)
+GPa = _prefixed("gigapascal", "GPa", 10**9, u.pascal)
+kHz = _prefixed("kilohertz", "kHz", 1000, u.hertz)
+MHz = _prefixed("megahertz", "MHz", 10**6, u.hertz)
+GHz = _prefixed("gigahertz", "GHz", 10**9, u.hertz)
+mA = _prefixed("milliampere", "mA", sp.Rational(1, 1000), u.ampere)
+kV = _prefixed("kilovolt", "kV", 1000, u.volt)
+mV = _prefixed("millivolt", "mV", sp.Rational(1, 1000), u.volt)
+kohm = _prefixed("kiloohm", "kΩ", 1000, u.ohm)
+Mohm = _prefixed("megaohm", "MΩ", 10**6, u.ohm)
+uF = _prefixed("microfarad", "μF", sp.Rational(1, 10**6), u.farad)
+nF = _prefixed("nanofarad", "nF", sp.Rational(1, 10**9), u.farad)
+pF = _prefixed("picofarad", "pF", sp.Rational(1, 10**12), u.farad)
+mH = _prefixed("millihenry", "mH", sp.Rational(1, 1000), u.henry)
+uH = _prefixed("microhenry", "μH", sp.Rational(1, 10**6), u.henry)
+mL = _prefixed("milliliter", "mL", sp.Rational(1, 1000), u.liter)
+kWh = _prefixed("kilowatt_hour", "kWh", 3600 * 1000, u.joule)
+tonne = _prefixed("tonne", "t", 1000, u.kilogram)
+rpm = _prefixed("rpm", "rpm", sp.Rational(1, 60), u.hertz)
+kmh = _prefixed("kilometer_per_hour", "km/h", sp.Rational(1000, 3600), u.meter / u.second)
+
+# name -> (quantity, description). Names must be valid identifiers.
+UNIT_TABLE: dict[str, tuple[sp.Expr, str]] = {
+    # length
+    "m": (u.meter, "meter"), "meter": (u.meter, "meter"),
+    "km": (u.km, "kilometer"), "cm": (u.cm, "centimeter"), "mm": (u.mm, "millimeter"),
+    "um": (u.um, "micrometer"), "nm": (u.nm, "nanometer"),
+    "inch": (u.inch, "inch"), "ft": (u.foot, "foot"), "foot": (u.foot, "foot"),
+    "yd": (u.yard, "yard"), "mile": (u.mile, "mile"), "nmi": (u.nautical_mile, "nautical mile"),
+    # time
+    "s": (u.second, "second"), "second": (u.second, "second"), "ms": (u.ms, "millisecond"),
+    "us": (u.us, "microsecond"), "ns": (u.ns, "nanosecond"),
+    "minute": (u.minute, "minute"), "hr": (u.hour, "hour"), "hour": (u.hour, "hour"),
+    "day": (u.day, "day"), "week": (7 * u.day, "week"),
+    "year": (u.year, "year (Julian)"),
+    # mass
+    "kg": (u.kg, "kilogram"), "g": (u.gram, "gram"), "gram": (u.gram, "gram"), "mg": (u.mg, "milligram"),
+    "ug": (u.ug, "microgram"), "tonne": (tonne, "metric ton"),
+    "lb": (u.pound, "pound (mass)"), "pound": (u.pound, "pound (mass)"),
+    # force, energy, power, pressure
+    "N": (u.newton, "newton"), "newton": (u.newton, "newton"), "kN": (kN, "kilonewton"),
+    "J": (u.joule, "joule"), "joule": (u.joule, "joule"), "kJ": (kJ, "kilojoule"), "MJ": (MJ, "megajoule"),
+    "eV": (u.eV, "electronvolt"), "kWh": (kWh, "kilowatt-hour"),
+    "W": (u.watt, "watt"), "watt": (u.watt, "watt"), "kW": (kW, "kilowatt"), "MW": (MW, "megawatt"),
+    "Pa": (u.pascal, "pascal"), "pascal": (u.pascal, "pascal"), "kPa": (kPa, "kilopascal"),
+    "MPa": (MPa, "megapascal"), "GPa": (GPa, "gigapascal"),
+    "bar": (u.bar, "bar"), "atm": (u.atm, "standard atmosphere"), "psi": (u.psi, "pound per square inch"),
+    "mmHg": (u.mmHg, "millimeter of mercury"),
+    # frequency, angle
+    "Hz": (u.hertz, "hertz"), "hertz": (u.hertz, "hertz"), "kHz": (kHz, "kilohertz"),
+    "MHz": (MHz, "megahertz"), "GHz": (GHz, "gigahertz"), "rpm": (rpm, "revolutions per minute"),
+    "rad": (u.radian, "radian"), "radian": (u.radian, "radian"),
+    "deg": (u.degree, "degree of arc"), "degree": (u.degree, "degree of arc"),
+    # electrical
+    "A": (u.ampere, "ampere"), "ampere": (u.ampere, "ampere"), "mA": (mA, "milliampere"),
+    "V": (u.volt, "volt"), "volt": (u.volt, "volt"), "kV": (kV, "kilovolt"), "mV": (mV, "millivolt"),
+    "ohm": (u.ohm, "ohm"), "kohm": (kohm, "kiloohm"), "Mohm": (Mohm, "megaohm"),
+    "C": (u.coulomb, "coulomb"), "coulomb": (u.coulomb, "coulomb"),
+    "F": (u.farad, "farad"), "farad": (u.farad, "farad"), "uF": (uF, "microfarad"),
+    "nF": (nF, "nanofarad"), "pF": (pF, "picofarad"),
+    "H": (u.henry, "henry"), "henry": (u.henry, "henry"), "mH": (mH, "millihenry"), "uH": (uH, "microhenry"),
+    "T": (u.tesla, "tesla"), "Wb": (u.weber, "weber"), "S": (u.siemens, "siemens"),
+    # thermodynamics, amount, light
+    "K": (u.kelvin, "kelvin"), "kelvin": (u.kelvin, "kelvin"),
+    "mol": (u.mole, "mole"), "mole": (u.mole, "mole"), "cd": (u.candela, "candela"),
+    "lux": (u.lux, "lux"),
+    # volume, speed, misc
+    "L": (u.liter, "liter"), "liter": (u.liter, "liter"), "mL": (mL, "milliliter"),
+    "kmh": (kmh, "kilometer per hour"), "percent": (u.percent, "percent (1/100)"),
+    "Gy": (u.gray, "gray"), "Bq": (u.becquerel, "becquerel"),
+}
+
+# physical constants, exposed as unit-carrying quantities
+CONSTANT_TABLE: dict[str, tuple[sp.Expr, str]] = {
+    "c": (u.speed_of_light, "speed of light in vacuum"),
+    "G": (u.gravitational_constant, "Newtonian constant of gravitation"),
+    "g_0": (u.gee, "standard acceleration of gravity"),
+    "h_planck": (u.planck, "Planck constant"),
+    "hbar": (u.hbar, "reduced Planck constant"),
+    "k_B": (u.boltzmann, "Boltzmann constant"),
+    "N_A": (u.avogadro_number, "Avogadro constant"),
+    "R_gas": (u.R, "molar gas constant"),
+    "e_charge": (u.elementary_charge, "elementary charge"),
+    "epsilon_0": (u.vacuum_permittivity, "vacuum permittivity"),
+    "mu_0": (u.vacuum_permeability, "vacuum permeability"),
+}
+
+
+def has_units(expr) -> bool:
+    return isinstance(expr, sp.Basic) and bool(expr.atoms(Quantity))
+
+
+def quantities(expr) -> set:
+    return expr.atoms(Quantity) if isinstance(expr, sp.Basic) else set()
+
+
+def strip_angles(expr):
+    """Replace angle units by plain numbers (degree -> pi/180, radian -> 1)."""
+    if not isinstance(expr, sp.Basic):
+        return expr
+    return expr.subs({u.degree: sp.pi / 180, u.radian: 1})
+
+
+def dimension_of(expr):
+    """Dimensional expression (e.g. length/time) or 1 if dimensionless."""
+    if not has_units(expr):
+        return sp.S.One
+    return SI.get_dimensional_expr(expr)
+
+
+def check_dimensions(expr) -> None:
+    """Raise UnitError when a sum mixes incompatible dimensions.
+
+    Only fully bound expressions are checked: a free symbol may receive a
+    unit-carrying value later (function parameters, plot variables), so
+    ``x m + 3 s`` is judged when x is known, not before.
+    """
+    if not has_units(expr) or expr.free_symbols:
+        return
+    try:
+        SI._collect_factor_and_dimension(expr)
+    except ValueError as exc:
+        msg = str(exc)
+        m = re.match(r'Dimension of "(.+)" is Dimension\((.+?)\), but it should be Dimension\((.+?)\)$', msg)
+        if m:
+            got = m.group(2).split(", ")[0]
+            want = m.group(3).split(", ")[0]
+            raise UnitError(
+                f"Cannot add '{m.group(1)}' ({got}) to a quantity with dimension {want}."
+            ) from None
+        raise UnitError("Inconsistent units: " + msg) from None
+    except Exception:
+        # _collect_factor_and_dimension does not cover every expression shape;
+        # only ValueError carries a real inconsistency.
+        return
+
+
+def to_base(expr):
+    if not has_units(expr):
+        return expr
+    try:
+        return convert_to(expr, BASE_UNITS)
+    except (TypeError, ValueError):
+        # e.g. exp(t/second) with a bare symbol t: leave it until t is bound.
+        return expr
+
+
+def tidy_units(expr):
+    """Normalise mixed-unit sums to SI base units; leave clean products as written."""
+    if not has_units(expr):
+        return expr
+    if isinstance(expr, sp.Add) or any(isinstance(a, sp.Add) and has_units(a) for a in expr.atoms(sp.Add)):
+        return to_base(expr)
+    return expr
+
+
+def strip_units(expr):
+    """Return (numeric expression in SI base units, dimension expression)."""
+    if not has_units(expr):
+        return expr, sp.S.One
+    base = to_base(expr)
+    dim = SI.get_dimensional_expr(base)
+    return base.subs({q: 1 for q in base.atoms(Quantity)}), dim
+
+
+def split_units(expr):
+    """Split a product into (numeric/symbolic part, unit part)."""
+    qs = quantities(expr)
+    if not qs:
+        return expr, sp.S.One
+    if isinstance(expr, sp.Add):
+        expr = to_base(expr)
+        parts = [split_units(t) for t in expr.args]
+        units = {u for _, u in parts}
+        if len(units) == 1:
+            return sp.Add(*[n for n, _ in parts]), units.pop()
+        return expr, sp.S.One
+    num, unit = expr.as_independent(*qs, as_Add=False)
+    return num, unit
+
+
+# SI units with scale factor 1, preferred for labels of base-unit values.
+_PREFERRED = None
+
+
+def _preferred_units():
+    global _PREFERRED
+    if _PREFERRED is None:
+        _PREFERRED = [u.volt, u.newton, u.joule, u.watt, u.pascal, u.ohm, u.coulomb, u.farad, u.henry, u.tesla,
+                      u.weber, u.hertz, u.ampere, u.meter, u.kilogram, u.second, u.kelvin, u.mole, u.candela,
+                      u.meter / u.second, u.meter / u.second**2, u.newton * u.meter, u.meter**2, u.meter**3,
+                      u.kilogram / u.meter**3, u.watt / u.meter**2, u.joule / u.kelvin, u.volt / u.meter,
+                      u.ampere / u.meter, u.newton / u.meter, u.pascal * u.second, u.meter**2 / u.second]
+    return _PREFERRED
+
+
+def _abbrev(unit) -> str:
+    rep = {q: sp.Symbol(str(q.abbrev)) for q in unit.atoms(Quantity)}
+    return str(unit.subs(rep)).replace("**", "^")
+
+
+def unit_label(expr) -> str:
+    """Short plain-text unit label for axes, e.g. 'm/s' or 'V', for values in SI base units."""
+    if not has_units(expr):
+        return ""
+    _, unit = split_units(to_base(expr))
+    if unit == 1:
+        return ""
+    dim = u.Dimension(SI.get_dimensional_expr(unit))
+    dimsys = SI.get_dimension_system()
+    for cand in _preferred_units():
+        try:
+            if dimsys.equivalent_dims(dim, u.Dimension(SI.get_dimensional_expr(cand))):
+                return _abbrev(cand)
+        except Exception:  # noqa: BLE001
+            continue
+    return _abbrev(unit)
+
+
+def convert(expr, target):
+    """Convert expr to target units, e.g. convert(5*km, m) -> 5000*m."""
+    if not isinstance(expr, sp.Basic):
+        raise UnitError("Only a single quantity can be converted.")
+    target_q = quantities(target)
+    if not target_q:
+        raise UnitError("The right side of '->' must be a unit, e.g. '-> km/hr'.")
+    if target_q <= ANGLE_UNITS and not has_units(expr):
+        expr = expr * u.radian  # plain numbers are radians
+    try:
+        result = convert_to(expr, target)
+    except (TypeError, ValueError):
+        names = ", ".join(sorted(str(s) for s in expr.free_symbols)) or "the expression"
+        raise UnitError(f"Cannot convert while {names} is still symbolic. Give it a value first, "
+                        f"or convert inside a function call, e.g. f(2 s) -> {unit_label(target) or 'unit'}.") from None
+    leftover = quantities(result) - target_q
+    if leftover:
+        raise UnitError(
+            f"Cannot convert a quantity with dimension {dimension_of(expr)} to "
+            f"{unit_label(target) or target} (dimension {dimension_of(target)})."
+        )
+    return result

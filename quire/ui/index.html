@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quire</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand" title="Quire: a reactive, unit-aware math worksheet">Quire</div>
+  <input id="title" class="title" value="Untitled" spellcheck="false" aria-label="Worksheet title">
+  <span id="dirty" class="dirty" title="Unsaved changes"></span>
+  <div class="spacer"></div>
+  <button id="btn-new">New</button>
+  <button id="btn-open">Open</button>
+  <button id="btn-save" title="Ctrl/Cmd+S">Save</button>
+  <button id="btn-saveas">Save as</button>
+  <button id="btn-examples">Examples</button>
+  <button id="btn-ref" class="toggle">Reference</button>
+</header>
+
+<div class="layout">
+  <main>
+    <div id="cells"></div>
+    <div class="add-end">
+      <button data-add="math">+ Math</button>
+      <button data-add="text">+ Text</button>
+      <button data-add="plot">+ Plot</button>
+    </div>
+  </main>
+
+  <aside id="ref" class="ref hidden">
+    <div class="ref-head">
+      <input id="ref-search" placeholder="Search functions, units…" spellcheck="false">
+      <button id="btn-reload" title="Reload modules from disk">↻</button>
+    </div>
+    <div id="ref-modules" class="ref-modules"></div>
+    <div id="ref-list" class="ref-list"></div>
+  </aside>
+</div>
+
+<footer id="status" class="status"></footer>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head"><span id="modal-title"></span><button id="modal-close">✕</button></div>
+    <div id="modal-body" class="modal-body"></div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+ "quire": 1,
+ "title": "Projectile motion",
+ "cells": [
+  {"type": "text", "source": "# Projectile motion\nLaunch speed and angle are the inputs. Everything below is derived from them, with units carried through. Change $v_0$ or $\\theta$ and watch the plot and the numbers update."},
+  {"type": "math", "source": "v_0 = 20 m/s"},
+  {"type": "math", "source": "theta = 40 deg"},
+  {"type": "math", "source": "g = 9.81 m/s^2"},
+  {"type": "text", "source": "Position as a function of time. Note that `t` is left undefined, so `y(t)` is a real function of a symbolic variable."},
+  {"type": "math", "source": "x(t) = v_0 cos(theta) t"},
+  {"type": "math", "source": "y(t) = v_0 sin(theta) t - 1/2 g t^2"},
+  {"type": "text", "source": "Time of flight, range and maximum height. `solve` works on the symbolic form; the numeric value follows."},
+  {"type": "math", "source": "t_flight = solve(y(t) == 0, t)"},
+  {"type": "math", "source": "T = 2 v_0 sin(theta) / g"},
+  {"type": "math", "source": "range = x(T) -> m"},
+  {"type": "math", "source": "h_max = y(T/2) -> m"},
+  {"type": "plot", "exprs": "y(t)", "xmin": "0 s", "xmax": "T", "var": "t", "samples": ""},
+  {"type": "text", "source": "Velocity is the derivative of position. `diff` acts on the symbolic expression, and the unit comes out as m/s."},
+  {"type": "math", "source": "v_y(t) = diff(y(t), t)"},
+  {"type": "math", "source": "v_y(1 s)"},
+  {"type": "math", "source": "sqrt(diff(x(t), t)^2 + v_y(T)^2) -> kmh"}
+ ]
+}

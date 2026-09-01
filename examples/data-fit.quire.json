@@ -1,0 +1,20 @@
+{
+ "quire": 1,
+ "title": "Data and fitting",
+ "cells": [
+  {"type": "text", "source": "# Measurements and a linear fit\nLists are written in square brackets. The `stats` module provides `mean`, `stdev`, `linfit` and friends."},
+  {"type": "math", "source": "xs = [0, 1, 2, 3, 4, 5]"},
+  {"type": "math", "source": "ys = [1.1, 2.9, 5.2, 6.8, 9.1, 10.9]"},
+  {"type": "math", "source": "mean(ys)"},
+  {"type": "math", "source": "stdev(ys)"},
+  {"type": "math", "source": "fit = linfit(xs, ys)"},
+  {"type": "math", "source": "slope = fit[0]\nintercept = fit[1]"},
+  {"type": "math", "source": "line(x) = slope x + intercept"},
+  {"type": "math", "source": "correlation(xs, ys)"},
+  {"type": "plot", "exprs": "line(x)", "xmin": "0", "xmax": "5", "var": "x", "samples": ""},
+  {"type": "text", "source": "A numeric ODE, then evaluated and plotted like any function (`odesolve` returns a function of the independent variable):"},
+  {"type": "math", "source": "sol = odesolve(-0.4 y + sin(x), y, x, 0, 1, 20)"},
+  {"type": "math", "source": "sol(5)"},
+  {"type": "plot", "exprs": "sol(x)", "xmin": "0", "xmax": "20", "var": "x", "samples": ""}
+ ]
+}

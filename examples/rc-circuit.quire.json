@@ -1,0 +1,20 @@
+{
+ "quire": 1,
+ "title": "RC circuit",
+ "cells": [
+  {"type": "text", "source": "# Charging an RC circuit\nA capacitor charged through a resistor. The time constant $\\tau = RC$ comes out in seconds automatically."},
+  {"type": "math", "source": "R = 4.7 kohm"},
+  {"type": "math", "source": "C = 100 uF"},
+  {"type": "math", "source": "V_s = 5 V"},
+  {"type": "math", "source": "tau = R C -> s"},
+  {"type": "text", "source": "The differential equation $RC \\, v' + v = V_s$ solved exactly with $v(0) = 0$ (from the `ode` module):"},
+  {"type": "math", "source": "v_sym = dsolve(d(v, t) == -v/tau + V_s/tau, v, t, 0, 0)"},
+  {"type": "math", "source": "v_c(t) = V_s (1 - exp(-t/tau))"},
+  {"type": "math", "source": "v_c(1 s) -> V"},
+  {"type": "math", "source": "i(t) = diff(v_c(t), t) C -> mA"},
+  {"type": "plot", "exprs": "v_c(t)", "xmin": "0 s", "xmax": "5 tau", "var": "t", "samples": ""},
+  {"type": "plot", "exprs": "i(t)", "xmin": "0 s", "xmax": "5 tau", "var": "t", "samples": ""},
+  {"type": "text", "source": "Time to reach 95% of the supply, solved for `t`:"},
+  {"type": "math", "source": "solve(v_c(t) == 0.95 V_s, t)"}
+ ]
+}
