@@ -76,6 +76,7 @@ function loadDoc(doc, fileName = null) {
   if (!state.cells.length) state.cells.push(newCell("math"));
   state.results = new Map();
   state.els = new Map();
+  $("#cells").innerHTML = "";  // drop the previous document's elements
   $("#title").value = state.title;
   mountCells();
   setDirty(false);

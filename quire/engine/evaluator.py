@@ -289,6 +289,10 @@ class Evaluator:
 
     def display_value(self, value):
         """What to show: inexact inputs (decimals) give a rounded numeric result."""
+        if isinstance(value, (list, tuple)):
+            return type(value)(self.display_value(v) for v in value)
+        if isinstance(value, sp.Float) and len(str(value)) > self.digits + 4:
+            return sp.Float(float(value), self.digits)
         if isinstance(value, sp.Expr) and not isinstance(value, (sp.Lambda, DefinedFunction, BooleanAtom)) \
                 and not value.free_symbols and value.atoms(sp.Float):
             num, unit = U.split_units(value)
