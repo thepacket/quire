@@ -8,7 +8,7 @@
   {"type": "math", "source": "V_s = 5 V"},
   {"type": "math", "source": "tau = R C -> s"},
   {"type": "text", "source": "The differential equation $RC \\, v' + v = V_s$ solved exactly with $v(0) = 0$ (from the `ode` module):"},
-  {"type": "math", "source": "v_sym = dsolve(d(v, t) == -v/tau + V_s/tau, v, t, 0, 0)"},
+  {"type": "math", "source": "v_sym = dsolve(D(v, t) == -v/tau + V_s/tau, v, t, 0, 0)"},
   {"type": "math", "source": "v_c(t) = V_s (1 - exp(-t/tau))"},
   {"type": "math", "source": "v_c(1 s) -> V"},
   {"type": "math", "source": "i(t) = diff(v_c(t), t) C -> mA"},

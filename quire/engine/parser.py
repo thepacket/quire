@@ -39,6 +39,19 @@ GLOBAL_DICT = {
 }
 
 IDENT = r"[A-Za-z_][A-Za-z0-9_]*"
+PRIME_RE = re.compile(rf"(?<![A-Za-z0-9_.])({IDENT})('+)\s*\(")
+INDEX_RE = re.compile(rf"(?<![A-Za-z0-9_.\]])({IDENT})\[")
+ASSUME_REL_RE = re.compile(r"^\s*(.+?)\s*(>=|<=|>|<|!=)\s*0\s*$")
+ASSUME_WORD_RE = re.compile(r"^\s*(.+?)\s+((?:[a-z]+\s*)+)$")
+ASSUMPTION_WORDS = {
+    "real": {"real": True}, "positive": {"positive": True}, "negative": {"negative": True},
+    "nonnegative": {"nonnegative": True}, "nonpositive": {"nonpositive": True}, "nonzero": {"nonzero": True},
+    "integer": {"integer": True}, "rational": {"rational": True}, "irrational": {"irrational": True},
+    "even": {"even": True}, "odd": {"odd": True}, "prime": {"prime": True}, "complex": {"complex": True},
+    "finite": {"finite": True},
+}
+ASSUMPTION_RELATIONS = {">": {"positive": True}, ">=": {"nonnegative": True}, "<": {"negative": True},
+                        "<=": {"nonpositive": True}, "!=": {"nonzero": True}}
 UNIT_ALIAS = "qunit_"
 NUM_RE = re.compile(r"(?<![A-Za-z0-9_.])(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
 PHRASE_RE = re.compile(rf"(\s*/\s*|\s*)({IDENT})(?!\s*\()(\s*\^\s*(?:-?\d+|\(\s*-?\d+\s*\)))?")
@@ -48,7 +61,8 @@ IDENT_RE = re.compile(rf"(?<![A-Za-z0-9_.])({IDENT})(?![A-Za-z0-9_(])")
 FORBIDDEN = [
     (re.compile(r"__"), "double underscores are not allowed"),
     (re.compile(r"\.\s*[A-Za-z_]"), "attribute access is not allowed"),
-    (re.compile(r"[\"';:\\@#$%&{}|~`!?]"), "unexpected character"),
+    (re.compile(r"!="), "'!=' is not supported; use solve/assume with == or < >"),
+    (re.compile(r"[\"';:\\@#$%&{}|~`?]"), "unexpected character"),
     (re.compile(r"\b(import|lambda|def|class|return|yield|for|while|if|else|in|is|not|and|or|None|True|False)\b"),
      "reserved word"),
 ]
@@ -147,6 +161,29 @@ def split_conversion(src: str) -> tuple[str, str | None]:
     return parts[0], parts[1].strip()
 
 
+def rewrite_primes(src: str) -> str:
+    """f'(x) -> dprime_(f, 1, x); f''(x) -> dprime_(f, 2, x)."""
+    return PRIME_RE.sub(lambda m: f"dprime_({m.group(1)}, {len(m.group(2))}, ", src)
+
+
+def rewrite_indexes(src: str, namespace: dict) -> str:
+    """a[n] for a name that is not a defined list -> seq_(a, n), an indexed sequence term."""
+    out, pos = [], 0
+    while True:
+        m = INDEX_RE.search(src, pos)
+        if not m:
+            out.append(src[pos:])
+            return "".join(out)
+        name = m.group(1)
+        if name in namespace and not isinstance(namespace[name], sp.Symbol):
+            out.append(src[pos:m.end()])
+            pos = m.end()
+            continue
+        j = _match(src, m.end() - 1)
+        out.append(src[pos:m.start()] + f"seq_({name}, {src[m.end():j]})")
+        pos = j + 1
+
+
 def alias_units(src: str, unit_names) -> str:
     """After a number, a run of unit names always means units: ``3 m/s^2``.
 
@@ -168,12 +205,14 @@ def alias_units(src: str, unit_names) -> str:
         if before and before[-1] in "/^":
             pos = p
             continue
+        first = True
         while True:
             pm = PHRASE_RE.match(src, p)
             if not pm or pm.group(2) not in unit_names:
                 break
-            if not pm.group(1) and pm.start(2) == p and not src[p - 1].isdigit():
-                break
+            if first and "/" in pm.group(1):
+                break  # "2/s^3" is a division by the variable s, not "per second"
+            first = False
             out.append(pm.group(1) + UNIT_ALIAS + pm.group(2) + (pm.group(3) or ""))
             p = pm.end()
         pos = p
@@ -192,7 +231,9 @@ def parse(src: str, namespace: dict, unit_names=()) -> sp.Basic:
     src = src.strip()
     if not src:
         raise ParseError("Empty expression.")
+    src = rewrite_primes(src)
     _check_source(src)
+    src = rewrite_indexes(src, namespace)
     if unit_names:
         src = alias_units(src, unit_names)
     for name in called_names(src):
@@ -235,18 +276,68 @@ def _friendly_type_error(msg: str, src: str) -> str:
 class Statement:
     """A parsed worksheet line."""
 
-    kind: str  # "definition" | "function" | "expression"
+    kind: str  # "definition" | "function" | "expression" | "assume"
 
-    def __init__(self, kind: str, name: str | None, params: list[str], body: str, convert_to: str | None):
+    def __init__(self, kind: str, name: str | None, params: list[str], body: str, convert_to: str | None,
+                 names: list[str] = (), assumptions: dict | None = None):
         self.kind = kind
         self.name = name
         self.params = params
         self.body = body
         self.convert_to = convert_to
+        self.names = list(names)
+        self.assumptions = assumptions or {}
+
+
+def _assume(line: str) -> Statement | None:
+    """assume x > 0 | assume n positive integer | assume x, y real | assume x > 0, y != 0"""
+    if not re.match(r"^\s*assume\b", line):
+        return None
+    body = re.sub(r"^\s*assume\s*", "", line)
+    names: list[str] = []
+    assumptions: dict = {}  # name -> {sympy assumption: True}
+    pending: list[str] = []
+
+    def take_names(text: str) -> list[str]:
+        out = [n for n in text.split() if n]
+        for n in out:
+            if not re.fullmatch(IDENT, n):
+                raise ParseError(f"'{n}' is not a variable name.")
+        return out
+
+    for clause in body.split(","):
+        clause = clause.strip()
+        if not clause:
+            continue
+        if re.fullmatch(IDENT, clause):
+            pending.append(clause)
+            continue
+        m = ASSUME_REL_RE.match(clause)
+        if m:
+            these, spec = take_names(m.group(1)), dict(ASSUMPTION_RELATIONS[m.group(2)])
+        else:
+            m = ASSUME_WORD_RE.match(clause)
+            if not m:
+                raise ParseError("Write e.g. 'assume x > 0', 'assume n integer' or 'assume x, y real'.")
+            these, spec = take_names(m.group(1)), {}
+            for w in m.group(2).split():
+                if w not in ASSUMPTION_WORDS:
+                    raise ParseError(f"Unknown assumption '{w}'. Use: {', '.join(sorted(ASSUMPTION_WORDS))}.")
+                spec.update(ASSUMPTION_WORDS[w])
+        for n in pending + these:
+            names.append(n)
+            assumptions[n] = {**assumptions.get(n, {}), **spec}
+        pending = []
+    if pending or not names:
+        raise ParseError("Write e.g. 'assume x > 0', 'assume n integer' or 'assume x, y real'.")
+    return Statement("assume", None, [], "", None, names, assumptions)
 
 
 def classify(line: str) -> Statement:
     """Decide whether a line defines something, and split off a '->' conversion."""
+    st = _assume(line)
+    if st is not None:
+        return st
     m = DEF_RE.match(line)
     if m:
         name, params, rhs = m.group(1), m.group(2), m.group(3)

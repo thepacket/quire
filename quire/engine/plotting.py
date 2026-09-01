@@ -39,7 +39,7 @@ def _sample(cell: dict, env: dict, ev) -> dict:
     if not var:
         free = set()
         for p in parts:
-            free |= identifiers(p) - set(ev.base_namespace) - set(env)
+            free |= identifiers(p) - set(ev.base_namespace) - set(env) - {"seq_", "dprime_"}
         if len(free) == 1:
             var = free.pop()
         elif "x" in free or not free:
@@ -48,8 +48,8 @@ def _sample(cell: dict, env: dict, ev) -> dict:
             var = "t"
         else:
             raise QuireError(f"Several unknowns ({', '.join(sorted(free))}); choose the plot variable.")
-    xs = sp.Symbol(var)
     ns = ev.namespace(env, [var])
+    xs = ns[var]
 
     xmin = parse(cell.get("xmin") or "-10", ns, ev.unit_names)
     xmax = parse(cell.get("xmax") or "10", ns, ev.unit_names)

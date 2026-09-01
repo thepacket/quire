@@ -74,8 +74,32 @@ def test_undefined_names_stay_symbolic(ev):
 
 def test_shadowed_unit_after_number_is_still_unit(ev):
     r = run(ev, "m = 2 kg", "2 km + 3 m")
-    assert r[0]["warning"] and "meter" in r[0]["warning"]
+    assert r[0]["warning"] is None  # single-letter units never clash with variables
     assert r[1]["outputs"][0]["plain"] == "2003*meter"
+
+
+def test_single_letter_units_are_variables_outside_unit_position(ev):
+    assert last_plain(ev, "laplace(t^2, t, s)") == "2/s**3"
+    assert last_plain(ev, "E = 1/2 M v^2\ndiff(E, v)") == "M*v"
+    assert last_plain(ev, "5 N") == "5*newton"
+    assert last_plain(ev, "3 m -> cm") == "300*centimeter"
+    r = run(ev, "kg = 3")[0]
+    assert r["warning"] and "kilogram" in r["warning"]
+
+
+def test_assumptions(ev):
+    assert last_plain(ev, "assume x > 0", "sqrt(x^2)") == "x"
+    assert last_plain(ev, "assume x > 0, y != 0", "sqrt(x^2) y / y") == "x"
+    assert last_plain(ev, "assume n positive integer", "integrate(x^n, x, 0, 1)") == "1/(n + 1)"
+    r = run(ev, "assume x > 0", "assume x < 0")[1]
+    assert not r["ok"] and "contradict" in r["error"]
+
+
+def test_prime_and_sequence_notation(ev):
+    assert last_plain(ev, "f(x) = x^3", "f'(2)") == "12"
+    assert last_plain(ev, "f(x) = sin(x)", "f''(x)") == "-sin(x)"
+    assert last_plain(ev, "rsolve(a[n+1] == 2 a[n], a, n, 1)") == "2**n"
+    assert last_plain(ev, "xs = [10, 20]", "xs[1]") == "20"
 
 
 def test_function_definition_and_call(ev):
@@ -112,7 +136,7 @@ def test_solve_and_calculus(ev):
 
 
 def test_numeric_approximation(ev):
-    out = run(ev, "sqrt(2) m")[0]["outputs"][0]
+    out = run(ev, "sqrt(2) meter")[0]["outputs"][0]
     assert out["approx_plain"] == "1.41421 meter"
     assert run(ev, "3")[0]["outputs"][0].get("approx") is None
 
@@ -186,9 +210,9 @@ def test_stats_module(ev):
 
 
 def test_ode_module(ev):
-    assert last_plain(ev, "dsolve(d(y, x) == -y, y, x, 0, 1)") == "exp(-x)"
+    assert last_plain(ev, "dsolve(D(y, x) == -y, y, x, 0, 1)") == "exp(-x)"
     r = run(ev, "sol = odesolve(-y, y, x, 0, 1, 5)", "sol(1)")[1]
-    assert r["ok"] and abs(float(r["outputs"][0]["approx_plain"]) - 0.367879) < 1e-5
+    assert r["ok"] and abs(float(r["outputs"][0]["plain"]) - 0.367879) < 1e-5
 
 
 def test_broken_module_is_reported(tmp_path):
@@ -222,7 +246,7 @@ def test_symbolic_exponential_with_units_is_left_alone(ev):
 
 
 def test_dsolve_with_units(ev):
-    r = run(ev, "V_s = 5 V\ntau = 0.47 s", "dsolve(d(v, t) == -v/tau + V_s/tau, v, t, 0, 0)")[1]
+    r = run(ev, "V_s = 5 V\ntau = 0.47 s", "dsolve(D(v, t) == -v/tau + V_s/tau, v, t, 0, 0)")[1]
     assert r["ok"], r["error"]
 
 

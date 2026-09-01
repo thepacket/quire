@@ -24,6 +24,7 @@ class Entry:
     module: str = ""
     category: str = ""
     example: str = ""
+    hidden: bool = False
 
     def describe(self) -> dict:
         return {
@@ -46,12 +47,12 @@ class ModuleAPI:
         self.entries: list[Entry] = []
 
     def function(self, name: str, impl=None, *, signature: str = "", doc: str = "", category: str = "",
-                 example: str = ""):
-        """Register a function. Usable directly or as a decorator."""
+                 example: str = "", hidden: bool = False):
+        """Register a function. Usable directly or as a decorator. Hidden entries stay out of the catalog."""
 
         def add(fn):
             self.entries.append(Entry(name, "function", fn, signature or f"{name}(...)", doc, self.name,
-                                      category, example))
+                                      category, example, hidden))
             return fn
 
         return add(impl) if impl is not None else add
@@ -90,7 +91,7 @@ class Registry:
                  "count": len(m.entries)}
                 for m in self.modules
             ],
-            "entries": [e.describe() for m in self.modules for e in m.entries],
+            "entries": [e.describe() for m in self.modules for e in m.entries if not e.hidden],
         }
 
 

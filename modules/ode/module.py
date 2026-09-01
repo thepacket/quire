@@ -1,7 +1,7 @@
 """Ordinary differential equations, symbolic and numeric.
 
-Symbolic:   dsolve(d(y, x, 2) + y == 0, y, x)
-            dsolve(d(y, x) == -k y, y, x, 0, y0)        with y(0) = y0
+Symbolic:   dsolve(D(y, x, 2) + y == 0, y, x)
+            dsolve(D(y, x) == -k y, y, x, 0, y0)        with y(0) = y0
 Numeric:    sol = odesolve(-k y, y, x, 0, 1, 10)        dy/dx = -k y, y(0) = 1, up to x = 10
             sol(2.5)                                     then use it like a function, or plot it
 """
@@ -13,10 +13,26 @@ from sympy.utilities.lambdify import implemented_function
 NAME = "ode"
 DESCRIPTION = "Differential equations: dsolve (exact) and odesolve (numeric)."
 
-_counter = [0]
 
 
-def d(f, x, n=1):
+class NumericSolution:
+    """A numeric ODE solution that behaves like a function of the independent variable."""
+
+    def __init__(self, label, interp, x0, x1, var):
+        self.label, self.interp, self.x0, self.x1, self.var = label, interp, x0, x1, var
+        self.func = implemented_function(label, interp)
+
+    def __call__(self, arg):
+        arg = sp.sympify(arg)
+        if not arg.free_symbols:
+            return sp.Float(float(self.interp(float(arg))))
+        return self.func(arg)
+
+    def __repr__(self):
+        return f"{self.label}: numeric solution for {self.var} in [{self.x0}, {self.x1}]"
+
+
+def D(f, x, n=1):
     """Derivative marker for use inside dsolve equations."""
     if isinstance(f, sp.Symbol):
         f = sp.Function(f.name)(x)
@@ -53,28 +69,25 @@ def odesolve(rhs, y, x, x0, y0, x1, name=None):
                     dense_output=True, rtol=1e-8, atol=1e-10)
     if not res.success:
         raise RuntimeError(res.message)
-    _counter[0] += 1
     funcs = []
     for k, yk in enumerate(ys):
-        label = f"{yk}_sol"
-
         def make(idx):
             def _interp(t):
                 t = np.asarray(t, dtype=float)
                 return res.sol(t)[idx]
             return _interp
 
-        funcs.append(implemented_function(label, make(k)))
+        funcs.append(NumericSolution(f"{yk}_sol", make(k), x0, x1, x))
     return funcs if system else funcs[0]
 
 
 def register(api):
     C = "Differential equations"
-    api.function("d", d, signature="d(y, x, n)", doc="n-th derivative marker for dsolve equations", category=C,
-                 example="d(y, x, 2) + y == 0")
+    api.function("D", D, signature="D(y, x, n)", doc="n-th derivative marker for dsolve equations", category=C,
+                 example="D(y, x, 2) + y == 0")
     api.function("dsolve", dsolve, signature="dsolve(eq, y, x, x0, y0, dy0)",
                  doc="exact solution; initial values are optional", category=C,
-                 example="dsolve(d(y, x) == -y, y, x, 0, 1)")
+                 example="dsolve(D(y, x) == -y, y, x, 0, 1)")
     api.function("odesolve", odesolve, signature="odesolve(rhs, y, x, x0, y0, x1)",
                  doc="numeric solution of dy/dx = rhs; result is a function of x", category=C,
                  example="odesolve(-0.5 y + sin(x), y, x, 0, 1, 20)")

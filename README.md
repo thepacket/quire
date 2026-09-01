@@ -28,7 +28,9 @@ Worksheets are saved as JSON in `./worksheets` (change with `--dir`). Math is re
 with KaTeX from a CDN; without network access the worksheet still works, output is
 shown in plain text.
 
-Tests: `.venv/bin/python -m pytest`.
+Tests: `.venv/bin/python -m pytest`. Symbolic coverage report: `.venv/bin/python -m bench.run`
+(291 textbook problems across algebra, calculus, equations, linear algebra, transforms,
+number theory and special functions, all passing through the worksheet pipeline).
 
 ## The language
 
@@ -43,11 +45,18 @@ Tests: `.venv/bin/python -m pytest`.
 | `[1, 2, 3]`, `matrix([[1, 2], [3, 4]])` | lists and matrices |
 | several lines in one cell | evaluated in order, each shown |
 
-If you define a name that is also a unit (`m`, `s`, `F`, `C`, `N`, `g` …), your
-definition wins everywhere except directly after a number: `3 m` is always three
-meters, `2*m` is twice your `m`. A number that is a divisor or an exponent does not
-start a unit phrase, so in `1/2 g t^2` the `g` is still your gravity. The cell shows a
-note when a definition shadows a unit.
+Single-letter unit symbols (`m`, `s`, `g`, `N`, `V`, `C`, `F`, `T` …) are units only in
+unit position: directly after a number (`3 m/s^2`) or as a `->` target. Anywhere else
+they are ordinary variables, so `F = m a` and `laplace(f, t, s)` mean what they say.
+Longer names (`kg`, `Hz`, `meter`, `second`) are always units. A number that is a
+divisor or an exponent does not start a unit phrase, so in `1/2 g t^2` the `g` is your
+gravity even right after the 2. Physical constants have explicit names: `c_light`,
+`G_grav`, `g_0`, `h_planck`, `k_B`, `N_A`, `R_gas`, `e_charge`, `epsilon_0`, `mu_0`.
+
+Assumptions sharpen simplification: `assume x > 0`, `assume n positive integer`,
+`assume x, y real`. Prime notation works on defined functions (`f'(2)`, `f''(x)`),
+sequences are written `a[n]` (`rsolve(a[n+1] == 2 a[n], a, n, 1)`), and `integral` /
+`derivative` are the unevaluated forms of `integrate` / `diff` (`doit` evaluates them).
 
 Trig functions accept degrees or radians (`sin(30 deg)`). Inverse trig returns radians;
 add `-> deg`.
@@ -100,7 +109,12 @@ quire/engine/evaluator.py  top-down evaluation of a document; LaTeX + numeric ou
 quire/engine/plotting.py   samples expressions to points (server does no drawing).
 quire/engine/worker.py     evaluation in a child process with a timeout and auto-restart.
 quire/modules/registry.py  loads modules, builds the namespace and the catalog.
-quire/modules/core.py      the built-in module: 190 units, constants and functions.
+quire/modules/core.py      the built-in module, assembled from quire/modules/builtin/*
+                           (basics, algebra, calculus, linalg, numbers, special, transforms):
+                           about 300 units, constants and functions.
+bench/                     the symbolic coverage corpus (bench/problems.py) and its runner;
+                           `python -m bench.run` prints pass rates by domain. Every problem
+                           also runs under pytest.
 quire/server.py            stdlib HTTP server: static UI + JSON API.
 quire/ui/                  the worksheet UI: vanilla JS, SVG plots, KaTeX rendering.
 ```

@@ -17,6 +17,15 @@ from .errors import QuireError
 from .parser import UNIT_ALIAS, alias_units, classify, identifiers, parse
 
 INTERNAL_NAMES = {"Symbol", "Integer", "Float", "Rational", "Function", "Lambda"}
+ASSUME_KEY = "$assume"  # env slot for symbol assumptions; '$' cannot appear in a name
+
+_ASSUMPTION_LATEX = {
+    "positive": "{n} > 0", "negative": "{n} < 0", "nonnegative": r"{n} \geq 0", "nonpositive": r"{n} \leq 0",
+    "nonzero": r"{n} \neq 0", "real": r"{n} \in \mathbb{{R}}", "integer": r"{n} \in \mathbb{{Z}}",
+    "rational": r"{n} \in \mathbb{{Q}}", "complex": r"{n} \in \mathbb{{C}}",
+    "irrational": r"{n} \notin \mathbb{{Q}}", "even": r"{n} \text{{ even}}", "odd": r"{n} \text{{ odd}}",
+    "prime": r"{n} \text{{ prime}}", "finite": r"{n} \text{{ finite}}",
+}
 
 
 class DefinedFunction:
@@ -28,10 +37,11 @@ class DefinedFunction:
     changes representation, never value.
     """
 
-    def __init__(self, name: str, params: list[str], body, target=None, target_text: str | None = None):
+    def __init__(self, name: str, params: list[str], body, target=None, target_text: str | None = None,
+                 symbols=None):
         self.name = name
         self.params = params
-        self.lam = sp.Lambda(tuple(sp.Symbol(p) for p in params), body)
+        self.lam = sp.Lambda(tuple(symbols or [sp.Symbol(p) for p in params]), body)
         self.expr = body
         self.target = target
         self.target_text = target_text
@@ -136,6 +146,8 @@ def to_latex(value) -> str:
             num, unit = U.split_units(value)
             if num == 1 and unit != 1:
                 return "1\\," + pretty_units(sp.latex(unit))  # "1 s", not a bare "s"
+        if not isinstance(value, (sp.Basic, list, tuple, dict)):
+            return r"\text{" + str(value).replace("_", r"\_") + "}"
         return pretty_units(sp.latex(value))
     except Exception:
         return r"\text{" + str(value).replace("_", r"\_") + "}"
@@ -153,6 +165,12 @@ class Evaluator:
         self.base_namespace = registry.namespace()
         self.units_namespace = {e.name: e.value for m in registry.modules for e in m.entries if e.kind == "unit"}
         self.unit_names = frozenset(self.units_namespace)
+        # Single-letter unit symbols (m, s, g, N, V, ...) collide with the names people give variables.
+        # They count as units only in unit position: after a number ("3 m"), or as a "->" target.
+        # Longer names (kg, Hz, meter, second) are always units.
+        for name in self.units_namespace:
+            if len(name) == 1 and self.base_namespace.get(name) is self.units_namespace[name]:
+                del self.base_namespace[name]
         # aliases used by the parser for "number followed by unit" phrases
         self.base_namespace.update({UNIT_ALIAS + k: v for k, v in self.units_namespace.items()})
         self.digits = digits
@@ -160,9 +178,12 @@ class Evaluator:
     # -- namespaces -----------------------------------------------------
     def namespace(self, env: dict, bound: list[str] = ()) -> dict:
         ns = dict(self.base_namespace)
-        ns.update(env)
+        assumed = env.get(ASSUME_KEY, {})
+        for name, a in assumed.items():
+            ns[name] = sp.Symbol(name, **a)
+        ns.update({k: v for k, v in env.items() if k != ASSUME_KEY})
         for b in bound:
-            ns[b] = sp.Symbol(b)
+            ns[b] = sp.Symbol(b, **assumed.get(b, {}))
         return ns
 
     def parse_unit(self, text: str):
@@ -189,30 +210,36 @@ class Evaluator:
     def evaluate_math(self, source: str, env: dict) -> dict:
         outputs, defines, uses = [], [], set()
         error = warning = None
+        self.last_values = []  # raw values of each output line (used by the benchmark)
         for line in source.split("\n"):
             if not line.strip():
                 continue
             try:
                 st = classify(line)
+                if st.kind == "assume":
+                    outputs.append(self.assume(st, env))
+                    continue
                 ns = self.namespace(env, st.params)
                 # names used, ignoring unit phrases such as "3 m" even when m is also defined
-                uses |= (identifiers(alias_units(st.body, self.unit_names)) - set(st.params)) & set(env)
+                uses |= (identifiers(alias_units(st.body, self.unit_names)) - set(st.params)) & set(env) - {ASSUME_KEY}
                 value = parse(st.body, ns, self.unit_names)
                 if st.kind == "function":
                     # The body is checked and converted when called: parameters may carry units.
                     if not isinstance(value, sp.Expr):
                         raise QuireError("A function body must be a single expression.")
                     target = self.parse_unit(st.convert_to) if st.convert_to else None
-                    value = DefinedFunction(st.name, st.params, value, target, st.convert_to)
+                    value = DefinedFunction(st.name, st.params, value, target, st.convert_to,
+                                            symbols=[ns[p] for p in st.params])
                 else:
                     value = self.finalize(value, st.convert_to)
-                if st.kind in ("definition", "function") and st.name in self.unit_names:
+                if st.kind in ("definition", "function") and st.name in self.unit_names and len(st.name) > 1:
                     warning = (f"'{st.name}' now means your definition. Directly after a number it still "
                                f"means the unit ({U.UNIT_TABLE[st.name][1]}), as in '3 {st.name}'; "
                                f"write '3*{st.name}' for three times yours.")
                 if st.kind in ("definition", "function"):
                     env[st.name] = value
                     defines.append(st.name)
+                self.last_values.append(value)
                 outputs.append(self.render(st, value))
             except QuireError as exc:
                 error = str(exc)
@@ -225,6 +252,23 @@ class Evaluator:
                 break
         return {"ok": error is None, "outputs": outputs, "defines": defines, "uses": sorted(uses), "error": error,
                 "warning": warning}
+
+    def assume(self, st, env: dict) -> dict:
+        assumed = env.setdefault(ASSUME_KEY, {})
+        for n in st.names:
+            merged = {**assumed.get(n, {}), **st.assumptions[n]}
+            try:
+                sp.Symbol(n, **merged)
+            except Exception as exc:  # noqa: BLE001 - inconsistent assumptions
+                raise QuireError(f"Assumptions on '{n}' contradict each other: {exc}") from None
+            assumed[n] = merged
+        parts = []
+        for n in st.names:
+            head = sp.latex(sp.Symbol(n))
+            for key in st.assumptions[n]:
+                parts.append(_ASSUMPTION_LATEX.get(key, "{n}").format(n=head))
+        return {"kind": "assume", "latex": ",\\ ".join(parts),
+                "plain": "; ".join(f"{n} {' '.join(st.assumptions[n])}" for n in st.names)}
 
     def finalize(self, value, convert_to: str | None, check: bool = True):
         if isinstance(value, (list, tuple)):

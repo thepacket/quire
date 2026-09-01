@@ -110,8 +110,8 @@ UNIT_TABLE: dict[str, tuple[sp.Expr, str]] = {
 
 # physical constants, exposed as unit-carrying quantities
 CONSTANT_TABLE: dict[str, tuple[sp.Expr, str]] = {
-    "c": (u.speed_of_light, "speed of light in vacuum"),
-    "G": (u.gravitational_constant, "Newtonian constant of gravitation"),
+    "c_light": (u.speed_of_light, "speed of light in vacuum"),
+    "G_grav": (u.gravitational_constant, "Newtonian constant of gravitation"),
     "g_0": (u.gee, "standard acceleration of gravity"),
     "h_planck": (u.planck, "Planck constant"),
     "hbar": (u.hbar, "reduced Planck constant"),
