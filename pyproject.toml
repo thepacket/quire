@@ -31,5 +31,11 @@ desktop = ["pywebview>=5"]
 quire = "quire.__main__:main"
 quire-desktop = "quire.desktop:main"
 
+[tool.setuptools.packages.find]
+include = ["quire*"]
+
+[tool.setuptools.package-data]
+quire = ["ui/*", "ui/vendor/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
