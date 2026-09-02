@@ -295,3 +295,14 @@ def test_plot_labels_prefer_named_si_units(ev):
     assert U.unit_label(2 * U.mA) == "A"
     assert U.unit_label(U.u.km / U.u.hour) == "m/s"
     assert U.unit_label(U.u.kg * U.u.m**2 / U.u.s**2) == "J"
+
+
+def test_bound_visible_in_same_cell(ev):
+    r = run(ev, "assume s > 1\nintegrate(x^(s - 1)/(exp(x) - 1), x, 0, oo)")[0]
+    assert r["ok"] and r["outputs"][1]["plain"] == "gamma(s)*zeta(s)"
+
+
+def test_recognized_integral_carries_note(ev):
+    r = run(ev, "integrate(ln(1 + x^2)/(1 + x^2), x, 0, oo)")[0]
+    assert r["ok"] and r["outputs"][0]["plain"] == "pi*log(2)" and "recognized" in r["outputs"][0]["notes"][0]
+    assert last_plain(ev, "recognize(0.2722)") == "0.272200000000000"

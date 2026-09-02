@@ -214,7 +214,7 @@ class Evaluator:
     def evaluate_math(self, source: str, env: dict) -> dict:
         from ..modules import hooks
 
-        hooks.context["bounds"] = env.get(BOUNDS_KEY, {})
+        hooks.context["bounds"] = env.setdefault(BOUNDS_KEY, {})  # same dict the assume lines fill in
         outputs, defines, uses = [], [], set()
         error = warning = None
         self.last_values = []  # raw values of each output line (used by the benchmark)
