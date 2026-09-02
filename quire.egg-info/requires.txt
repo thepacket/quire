@@ -1,0 +1,11 @@
+sympy>=1.13
+numpy>=1.26
+scipy>=1.12
+CoolProp>=6.6
+periodictable>=1.7
+
+[desktop]
+pywebview>=5
+
+[dev]
+pytest

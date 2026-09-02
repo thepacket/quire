@@ -1,0 +1,3 @@
+[console_scripts]
+quire = quire.__main__:main
+quire-desktop = quire.desktop:main

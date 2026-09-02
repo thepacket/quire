@@ -63,6 +63,7 @@ class EvalWorker:
         self._start()
 
     def _start(self):
+        self._booting = True
         self.conn, child = self._ctx.Pipe()
         self.proc = self._ctx.Process(target=_loop, args=(child, self.module_dirs, self.doc_dirs), daemon=True)
         self.proc.start()
@@ -77,9 +78,16 @@ class EvalWorker:
         self._start()
 
     def _recv(self, timeout: float | None = None):
-        """Receive one message, or None on timeout / worker death (worker is restarted)."""
+        """Receive one message, or None on timeout / worker death (worker is restarted).
+
+        The first answer after a (re)start waits for the modules to load, which can take
+        longer than the evaluation timeout on a slow machine.
+        """
+        if timeout is None:
+            timeout = max(self.timeout, 60.0) if self._booting else self.timeout
         try:
-            if self.conn.poll(self.timeout if timeout is None else timeout):
+            if self.conn.poll(timeout):
+                self._booting = False
                 return self.conn.recv()
             self.restart()
         except (EOFError, OSError):
@@ -88,7 +96,7 @@ class EvalWorker:
 
     def catalog(self) -> dict:
         self.conn.send(("catalog",))
-        cat = self._recv(max(self.timeout, 60.0))  # the first answer includes loading every module
+        cat = self._recv()
         return cat if cat is not None else {"modules": [], "entries": [], "error": "The evaluation worker did not start."}
 
     def evaluate(self, cells: list[dict]) -> list[dict]:
