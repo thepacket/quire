@@ -125,6 +125,16 @@ def _linsolve(eqs, *syms):
     return pretty_solutions(res, syms)
 
 
+def _simplify(expr):
+    expr = sp.sympify(expr)
+    res = sp.simplify(expr)
+    if res.has(sp.erfc, sp.erfi, sp.erf2):
+        alt = sp.simplify(res.rewrite(sp.erf))
+        if sp.count_ops(alt) < sp.count_ops(res):
+            res = alt
+    return res
+
+
 def _subs(expr, *pairs):
     if len(pairs) == 2:
         return sp.sympify(expr).subs(pairs[0], pairs[1])
@@ -168,11 +178,12 @@ def _N(expr, digits=15):
 
 def register(api):
     G = "Simplify & expand"
-    api.function("simplify", sp.simplify, signature="simplify(expr)", doc="simplify an expression", category=G)
+    api.function("simplify", _simplify, signature="simplify(expr)", doc="simplify an expression", category=G)
     api.function("expand", sp.expand, signature="expand(expr)", doc="multiply out", category=G,
                  example="expand((x+1)^3)")
-    api.function("factor", sp.factor, signature="factor(expr)", doc="factor a polynomial", category=G,
-                 example="factor(x^2 - 1)")
+    api.function("factor", lambda e, ext=None: sp.factor(e, extension=ext) if ext is not None else sp.factor(e),
+                 signature="factor(expr, ext)", doc="factor a polynomial; ext = sqrt(2) or i to factor over an extension",
+                 category=G, example="factor(x^2 - 1)")
     api.function("collect", sp.collect, signature="collect(expr, x)", doc="group by powers of x", category=G)
     api.function("cancel", sp.cancel, signature="cancel(expr)", doc="cancel common factors", category=G)
     api.function("apart", sp.apart, signature="apart(expr, x)", doc="partial fractions", category=G,

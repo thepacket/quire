@@ -298,10 +298,10 @@ class Evaluator:
                 return value  # already a plain decimal (keep the user's precision), or not numeric
             try:
                 num = sp.N(num, self.digits + 3)
-            except Exception:
+                if num.is_number and num.is_real:
+                    return sp.Float(float(num), self.digits) * unit if float(num) != 0 else sp.S.Zero * unit
+            except (TypeError, ValueError):
                 return value
-            if num.is_number and num.is_real:
-                return sp.Float(float(num), self.digits) * unit if float(num) != 0 else sp.S.Zero * unit
         return value
 
     def render(self, st, value) -> dict:

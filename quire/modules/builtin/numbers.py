@@ -1,6 +1,5 @@
 """Number theory and combinatorics."""
 import sympy as sp
-from sympy import ntheory
 from sympy.functions.combinatorial import numbers as cn
 
 
@@ -30,7 +29,7 @@ def register(api):
                  doc="a^b mod m", category=N, example="powmod(2, 100, 7)")
     api.function("isqrt", lambda n: sp.integer_nthroot(int(n), 2)[0], signature="isqrt(n)",
                  doc="integer square root", category=N)
-    api.function("legendre_symbol", lambda a, p: ntheory.legendre_symbol(int(a), int(p)),
+    api.function("legendre_symbol", lambda a, p: cn.legendre_symbol(int(a), int(p)),
                  signature="legendre_symbol(a, p)", doc="Legendre symbol (a/p)", category=N)
 
     K = "Combinatorics"

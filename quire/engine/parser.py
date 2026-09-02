@@ -233,6 +233,7 @@ def parse(src: str, namespace: dict, unit_names=()) -> sp.Basic:
         raise ParseError("Empty expression.")
     src = rewrite_primes(src)
     _check_source(src)
+    src = re.sub(r"\]\s+(?=[A-Za-z_(])", "] * ", src)  # "a[n] b[n]" is a product
     src = rewrite_indexes(src, namespace)
     if unit_names:
         src = alias_units(src, unit_names)

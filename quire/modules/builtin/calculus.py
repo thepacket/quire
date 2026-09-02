@@ -34,8 +34,41 @@ def _ranges(args):
     return out
 
 
+def _quad(f, ranges):
+    """Numeric value of a definite integral via scipy (nested for multiple ranges)."""
+    import numpy as np
+    from scipy.integrate import quad
+
+    if not ranges:
+        return float(f)
+    (x, a, b), rest = ranges[0], ranges[1:]
+    if rest:
+        inner = lambda v: _quad(f.subs(x, v), rest)  # noqa: E731
+        val, _ = quad(inner, float(a), float(b))
+        return val
+    fn = sp.lambdify(x, f, modules=["numpy", "scipy"])
+    lo = -np.inf if a == -sp.oo else float(a)
+    hi = np.inf if b == sp.oo else float(b)
+    val, _ = quad(lambda v: float(np.real(fn(v))), lo, hi, limit=200)
+    return val
+
+
 def _integrate(f, *args):
-    return sp.integrate(f, *_ranges(args))
+    ranges = _ranges(args)
+    res = sp.integrate(f, *ranges)
+    if isinstance(res, sp.Integral) and not res.free_symbols and all(isinstance(r, tuple) for r in ranges):
+        # No closed form found; a definite integral with numeric bounds still has a value.
+        try:
+            val = res.evalf()
+            if val.is_number and not val.has(sp.Integral):
+                return val
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            return sp.Float(_quad(f, ranges), 15)
+        except Exception:  # noqa: BLE001
+            pass
+    return res
 
 
 def _integral(f, *args):
@@ -46,7 +79,12 @@ def _nintegrate(f, x, a, b):
     num, _ = U.strip_units(f)
     a_num, _ = U.strip_units(a)
     b_num, _ = U.strip_units(b)
-    val = sp.Integral(num, (sym(x), a_num, b_num)).evalf()
+    try:
+        val = sp.Integral(num, (sym(x), a_num, b_num)).evalf()
+        if not val.is_number or val.has(sp.Integral):
+            raise ValueError
+    except Exception:  # noqa: BLE001 - mpmath quadrature failed; use scipy
+        val = sp.Float(_quad(num, [(sym(x), a_num, b_num)]), 15)
     unit = sp.S.One
     if U.has_units(f) or U.has_units(b):
         _, fu = U.split_units(U.to_base(f)) if U.has_units(f) else (None, sp.S.One)
@@ -80,6 +118,14 @@ def _with_integer_bounds(op, f, k, a, b):
         rep[k] = sp.Dummy(k.name, integer=True)
     f2, a2, b2 = (sp.sympify(e).subs(rep) for e in (f, a, b))
     res = op(f2, (rep.get(k, k), a2, b2))
+    finite = b2 not in (sp.oo, -sp.oo) and a2 not in (sp.oo, -sp.oo)
+    if finite and isinstance(res, sp.Piecewise):
+        # A finite sum has a closed form everywhere; drop sympy's "otherwise keep the Sum" branch.
+        kept = [(e, c) for e, c in res.args if not e.has(sp.Sum, sp.Product)]
+        if len(kept) == 1:
+            res = kept[0][0]
+        elif kept:
+            res = sp.Piecewise(*kept)
     return res.subs({v: s_ for s_, v in rep.items()})
 
 
@@ -122,6 +168,11 @@ def _hessian(f, vars_):
     return sp.ImmutableMatrix(sp.hessian(f, as_list(vars_)))
 
 
+def _implicit_diff(eq, y, x, n=1):
+    from ._util import as_residual
+    return sp.idiff(as_residual(eq), sym(y), sym(x), int(n))
+
+
 def _fourier_series(f, x, n=3):
     fs = sp.fourier_series(f, (sym(x), -sp.pi, sp.pi))
     return fs.truncate(int(n))
@@ -144,6 +195,8 @@ def register(api):
     C = "Calculus"
     api.function("diff", _diff, signature="diff(f, x, n)", doc="derivative; diff(f, x, y) for mixed partials",
                  category=C, example="diff(sin(x) x, x)")
+    api.function("implicit_diff", _implicit_diff, signature="implicit_diff(eq, y, x)",
+                 doc="dy/dx from an implicit equation", category=C, example="implicit_diff(x^2 + y^2 == 1, y, x)")
     api.function("integrate", _integrate, signature="integrate(f, x, a, b)",
                  doc="integral; omit a, b for an antiderivative; repeat x, a, b for multiple integrals",
                  category=C, example="integrate(x^2, x, 0, 1)")

@@ -29,8 +29,9 @@ with KaTeX from a CDN; without network access the worksheet still works, output 
 shown in plain text.
 
 Tests: `.venv/bin/python -m pytest`. Symbolic coverage report: `.venv/bin/python -m bench.run`
-(291 textbook problems across algebra, calculus, equations, linear algebra, transforms,
-number theory and special functions, all passing through the worksheet pipeline).
+(747 textbook problems across algebra, calculus, equations, linear algebra, transforms,
+number theory, special functions, worksheets with units and the stats module, all passing
+through the worksheet pipeline).
 
 ## The language
 
@@ -57,6 +58,9 @@ Assumptions sharpen simplification: `assume x > 0`, `assume n positive integer`,
 `assume x, y real`. Prime notation works on defined functions (`f'(2)`, `f''(x)`),
 sequences are written `a[n]` (`rsolve(a[n+1] == 2 a[n], a, n, 1)`), and `integral` /
 `derivative` are the unevaluated forms of `integrate` / `diff` (`doit` evaluates them).
+`implicit_diff(x^2 + y^2 == 1, y, x)` differentiates implicitly; `factor(x^2 - 2, sqrt(2))`
+factors over an extension. A definite integral with numeric bounds that has no closed form
+comes back as a decimal instead of an unevaluated integral.
 
 Trig functions accept degrees or radians (`sin(30 deg)`). Inverse trig returns radians;
 add `-> deg`.
