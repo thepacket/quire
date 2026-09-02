@@ -22,6 +22,7 @@ from sympy.parsing.sympy_parser import (
 )
 
 from .errors import ParseError
+from .notation import normalize, uses_notation
 
 TRANSFORMATIONS = standard_transformations + (convert_xor, implicit_multiplication, implicit_application)
 
@@ -270,6 +271,11 @@ def parse(src: str, namespace: dict, unit_names=()) -> sp.Basic:
     src = src.strip()
     if not src:
         raise ParseError("Empty expression.")
+    if uses_notation(src):
+        try:
+            src = normalize(src)
+        except ValueError as exc:
+            raise ParseError(str(exc)) from None
     src = rewrite_greek(rewrite_primes(src))
     _check_source(src)
     src = re.sub(r"\]\s+(?=[A-Za-z_(])", "] * ", src)  # "a[n] b[n]" is a product
@@ -279,9 +285,11 @@ def parse(src: str, namespace: dict, unit_names=()) -> sp.Basic:
     for name in called_names(src):
         value = namespace.get(name)
         if value is None:
-            raise ParseError(
-                f"'{name}' is not a known function. For multiplication write '{name} * (...)' or '{name} (...)'."
-            )
+            import difflib
+
+            near = difflib.get_close_matches(name, [k for k, v in namespace.items() if callable(v) and not k.startswith(("qunit_", "qsym_"))], n=3, cutoff=0.75)
+            hint = f" Did you mean {', '.join(near)}?" if near else f" For multiplication write '{name} * (...)' or '{name} (...)'."
+            raise ParseError(f"'{name}' is not a known function.{hint}")
         if not callable(value):
             raise ParseError(f"'{name}' is a value, not a function. For multiplication write '{name} * (...)'.")
     code = rewrite_equalities(src)
@@ -327,6 +335,7 @@ class Statement:
         self.convert_to = convert_to
         self.names = list(names)
         self.assumptions = assumptions or {}
+        self.source = ""  # the line as typed, before notation was normalized
 
 
 DIGITS_RE = re.compile(r"^\s*digits\s*(?:=|:)?\s*(\d+)\s*$")
@@ -409,6 +418,18 @@ def _assume(line: str) -> Statement | None:
 
 def classify(line: str) -> Statement:
     """Decide whether a line defines something, and split off a '->' conversion."""
+    source = line
+    if uses_notation(line):
+        try:
+            line = normalize(line)  # so that 'θ = 30 deg' is seen as a definition of theta
+        except ValueError as exc:
+            raise ParseError(str(exc)) from None
+    st = _classify(line)
+    st.source = source
+    return st
+
+
+def _classify(line: str) -> Statement:
     st = _setting(line) or _assume(line)
     if st is not None:
         return st

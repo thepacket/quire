@@ -16,6 +16,7 @@ from . import units as U
 from .errors import QuireError
 from .parser import GREEK_NAMES, SYM_ALIAS, UNIT_ALIAS, alias_units, classify, identifiers, parse
 from .steps import Steps
+from .notation import normalize, uses_notation
 
 INTERNAL_NAMES = {"Symbol", "Integer", "Float", "Rational", "Function", "Lambda"}
 ASSUME_KEY = "$assume"  # env slot for symbol assumptions; '$' cannot appear in a name
@@ -29,6 +30,22 @@ _ASSUMPTION_LATEX = {
     "irrational": r"{n} \notin \mathbb{{Q}}", "even": r"{n} \text{{ even}}", "odd": r"{n} \text{{ odd}}",
     "prime": r"{n} \text{{ prime}}", "finite": r"{n} \text{{ finite}}",
 }
+
+
+def _hold_ranges(args):
+    out, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if isinstance(a, (tuple, list)):
+            out.append(tuple(a))
+            i += 1
+        elif isinstance(a, sp.Symbol) and len(args) - i >= 3 and not isinstance(args[i + 1], sp.Symbol):
+            out.append((a, args[i + 1], args[i + 2]))
+            i += 3
+        else:
+            out.append(a)
+            i += 1
+    return out
 
 
 class DefinedFunction:
@@ -265,6 +282,10 @@ class Evaluator:
                     defines.append(st.name)
                 self.last_values.append(value)
                 out = self.render(st, value, env.get(DIGITS_KEY))
+                if uses_notation(st.source):
+                    reading = self.reading(st, ns)
+                    if reading:
+                        out["reading"] = reading
                 if hooks.context.get("notes"):
                     out["notes"] = list(hooks.context["notes"])
                 if hooks.context.get("slider") and st.kind == "definition":
@@ -281,6 +302,29 @@ class Evaluator:
                 break
         return {"ok": error is None, "outputs": outputs, "defines": defines, "uses": sorted(uses), "error": error,
                 "warning": warning}
+
+    def reading(self, st, ns: dict):
+        """LaTeX of how a line written in paper notation was read, with integrals and sums left unevaluated."""
+        try:
+            text = normalize(st.body)
+            held = dict(ns)
+            held["integrate"] = lambda f, *a: sp.Integral(f, *_hold_ranges(a))
+            held["sum"] = lambda f, k, a, b: sp.Sum(f, (k, a, b))
+            held["product"] = lambda f, k, a, b: sp.Product(f, (k, a, b))
+            held["diff"] = lambda f, *a: sp.Derivative(f, *a)
+            held["sqrt"] = lambda x: sp.Pow(x, sp.S.Half, evaluate=False)
+            expr = parse(text, held, self.unit_names)
+            latex = to_latex(expr)
+            if st.kind in ("definition", "function"):
+                head = sp.latex(sp.Symbol(st.name))
+                if st.kind == "function":
+                    head += r"\left(" + ", ".join(sp.latex(sp.Symbol(p)) for p in st.params) + r"\right)"
+                latex = head + " = " + latex
+            if st.convert_to:
+                latex += r"\ \rightarrow\ " + sp.latex(self.parse_unit(st.convert_to))
+            return latex
+        except Exception:  # noqa: BLE001
+            return None
 
     def assume(self, st, env: dict) -> dict:
         assumed = env.setdefault(ASSUME_KEY, {})

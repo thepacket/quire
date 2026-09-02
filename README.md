@@ -95,6 +95,15 @@ gets an 8 s budget before backends and numerics take over.
 Trig functions accept degrees or radians (`sin(30 deg)`). Inverse trig returns radians;
 add `-> deg`.
 
+Notation can be written the way it is on paper. The integral and sum signs take bounds
+as `∫_0^1 x^2 dx`, `∫∫ x y dx dy`, `Σ_{k=1}^{n} k^2`, `Π_{k=1}^{n} k`; derivatives as
+`d/dx sin(x)` and `d²/dx² e^{-x²}`; Greek letters (`θ = 30 deg`), superscripts (`x²`),
+subscripts (`a₁`), `√`, `≤ ≥ ≠ × ·` are read as written, and LaTeX (`\frac{1}{2}`,
+`\sqrt{x}`, `\int_0^1 \frac{dx}{1+x^2}`, `\alpha`) is accepted too. A line that uses any of
+this shows a "read as" rendering of how it was understood. The **∑ palette** in the toolbar
+inserts templates and Greek letters, and typing a name pops up completions (units after
+`->`); Tab or Enter accepts one.
+
 The **Reference** panel lists every function, unit and constant with an example that
 inserts into the current cell. **Examples** opens complete worksheets.
 

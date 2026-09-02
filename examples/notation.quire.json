@@ -1,0 +1,24 @@
+{
+ "quire": 1,
+ "title": "Writing math as math",
+ "cells": [
+  {"type": "text", "source": "# Notation closer to paper\nIntegral and sum signs, √, π, θ, superscripts and pasted LaTeX are all read. Each cell shows how it was read, then the result. Open the **∑ Palette** to insert any of these."},
+  {"type": "math", "source": "∫_0^1 x² dx"},
+  {"type": "math", "source": "∫ e^{-x} sin(x) dx"},
+  {"type": "math", "source": "Σ_{k=1}^{n} k²"},
+  {"type": "math", "source": "Σ_{k=1}^{∞} 1/k²"},
+  {"type": "math", "source": "d/dx (x² sin(x))"},
+  {"type": "math", "source": "d²/dx² e^{-x²}"},
+  {"type": "math", "source": "√(a² + b²)"},
+  {"type": "math", "source": "θ = 30 deg\nsin(θ) + cos(θ)²"},
+  {"type": "text", "source": "Pasted LaTeX works as well:"},
+  {"type": "math", "source": "\\frac{1}{\\sqrt{2\\pi\\sigma^2}} e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}"},
+  {"type": "math", "source": "\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx"},
+  {"type": "math", "source": "\\sum_{k=0}^{\\infty} \\frac{x^k}{k!}"},
+  {"type": "text", "source": "Definitions and units read the same way:"},
+  {"type": "math", "source": "F(x) = ∫_0^x t e^{-t} dt"},
+  {"type": "math", "source": "F(2)"},
+  {"type": "math", "source": "v = 3 m/s\nt = 4 s\n√((v t)² + (2 m)²)"},
+  {"type": "plot", "kind": "function", "exprs": "F(x)", "xmin": "0", "xmax": "6", "var": "x"}
+ ]
+}

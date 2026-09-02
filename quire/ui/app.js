@@ -153,9 +153,10 @@ function buildMath(cell, body) {
     <div class="out"></div><div class="warn"></div><div class="err"></div><div class="meta"></div>`;
   const ta = $("textarea", body);
   ta.value = cell.source || "";
-  ta.addEventListener("input", () => { cell.source = ta.value; autogrow(ta); touch(); });
-  ta.addEventListener("keydown", ev => keyNav(cell, ta, ev));
+  ta.addEventListener("input", () => { cell.source = ta.value; autogrow(ta); touch(); acShow(ta); });
+  ta.addEventListener("keydown", ev => { if (acKey(ev)) return; keyNav(cell, ta, ev); });
   ta.addEventListener("focus", () => { state.activeInput = ta; });
+  ta.addEventListener("blur", () => setTimeout(acClose, 120));
   requestAnimationFrame(() => autogrow(ta));
 }
 
@@ -335,9 +336,10 @@ function renderResult(res) {
       let h = o.head ? katexHtml(`${o.head} = ${o.latex}`) : katexHtml(o.latex);
       if (o.approx) h += `<span class="approx">${katexHtml(`\\approx ${o.approx}`)}</span>`;
       const notes = (o.notes || []).map(n => `<div class="note">${esc(n)}</div>`).join("");
+      const reading = o.reading ? `<div class="reading"><span class="lbl">read as</span>${katexHtml(o.reading)}</div>` : "";
       const steps = o.steps ? `<div class="steps">${o.steps_title ? `<div class="steps-title">${esc(o.steps_title)}</div>` : ""}${o.steps.map((st, i) => `<div class="step"><span class="step-n">${i + 1}.</span><span class="step-text">${esc(st.text)}</span>${st.latex ? `<span class="step-math">${katexHtml(st.latex)}</span>` : ""}</div>`).join("")}</div>` : "";
       const sl = o.slider ? `<div class="slider-row"><input type="range" class="slider" data-line="${o.slider.line}" min="${o.slider.min}" max="${o.slider.max}" step="${o.slider.step || (o.slider.max - o.slider.min) / 200}" value="${o.slider.value}"><span class="slider-val">${fmtVal(o.slider.value)}</span></div>` : "";
-      return `${steps}<div class="out-line">${h}</div>${sl}${notes}`;
+      return `${reading}${steps}<div class="out-line">${h}</div>${sl}${notes}`;
     }).join("");
     for (const sl of out.querySelectorAll("input.slider")) sl.addEventListener("input", () => onSlider(cell, el, sl));
     warn.textContent = res.warning || "";
@@ -650,6 +652,86 @@ const WELCOME = {
   ],
 };
 
+// ---------- Palette ----------
+const PALETTE_ITEMS = [
+  ["∫", "∫_{a}^{b} f dx", "definite integral"], ["∫ dx", "∫ f dx", "antiderivative"], ["Σ", "Σ_{k=1}^{n} a_k", "sum"], ["∏", "∏_{k=1}^{n} a_k", "product"],
+  ["d/dx", "d/dx (f)", "derivative"], ["d²/dx²", "d²/dx² (f)", "second derivative"], ["√", "√(x)", "square root"], ["x²", "^2", "square"], ["xⁿ", "^(n)", "power"],
+  ["a/b", "(a)/(b)", "fraction"], ["lim", "limit(f, x, 0)", "limit"], ["series", "series(f, x, 0, 6)", "Taylor series"],
+  ["[ ]", "matrix([[a, b], [c, d]])", "matrix"], ["→", " -> ", "unit conversion"], ["==", " == ", "equation"], ["π", "π", ""], ["∞", "∞", ""], ["≤", " ≤ ", ""], ["≥", " ≥ ", ""], ["≠", " ≠ ", ""], ["×", " × ", ""], ["°", " deg", "degrees"],
+];
+const GREEK_LETTERS = "α β γ δ ε ζ η θ κ λ μ ν ξ ρ σ τ φ χ ψ ω Γ Δ Θ Λ Σ Φ Ψ Ω".split(" ");
+function buildPalette() {
+  const el = $("#palette");
+  el.innerHTML = PALETTE_ITEMS.map(([label, text, title]) => `<button data-insert="${esc(text)}" title="${esc(title || label)}">${esc(label)}</button>`).join("")
+    + `<span class="sep"></span>` + GREEK_LETTERS.map(g => `<button class="greek" data-insert="${g}">${g}</button>`).join("");
+  el.addEventListener("click", ev => { const b = ev.target.closest("button[data-insert]"); if (b) insertTemplate(b.dataset.insert); });
+}
+function insertTemplate(text) {
+  let inp = state.activeInput;
+  if (!inp || !document.body.contains(inp)) { const c = insertCell("math", state.cells.length, true); inp = $("textarea", state.els.get(c.id)); }
+  const a = inp.selectionStart ?? inp.value.length, b = inp.selectionEnd ?? a;
+  inp.value = inp.value.slice(0, a) + text + inp.value.slice(b);
+  // select the first placeholder so typing replaces it
+  const m = /\b(f|a_k|x|n|a|b|c|d)\b/.exec(text);
+  if (m && !/^[^A-Za-z]*$/.test(text)) inp.setSelectionRange(a + m.index, a + m.index + m[0].length);
+  else inp.setSelectionRange(a + text.length, a + text.length);
+  inp.dispatchEvent(new Event("input"));
+  inp.focus();
+}
+
+// ---------- Autocomplete ----------
+let acBox = null, acItems = [], acIndex = 0, acInput = null, acRange = null;
+function acClose() { if (acBox) { acBox.remove(); acBox = null; } acItems = []; acInput = null; }
+function acCandidates(prefix, afterArrow) {
+  if (!state.catalog) return [];
+  const p = prefix.toLowerCase();
+  const pool = state.catalog.entries.filter(e => afterArrow ? e.kind === "unit" : e.kind !== "syntax");
+  const starts = pool.filter(e => e.name.toLowerCase().startsWith(p));
+  const contains = pool.filter(e => !e.name.toLowerCase().startsWith(p) && (e.name.toLowerCase().includes(p) || e.doc.toLowerCase().includes(p)));
+  return [...starts, ...contains].slice(0, 8);
+}
+function acShow(inp) {
+  const pos = inp.selectionStart, before = inp.value.slice(0, pos);
+  const arrow = /->\s*([A-Za-z_][\w/^ ]*)$/.exec(before);
+  const word = /([A-Za-z_][A-Za-z0-9_]*)$/.exec(before);
+  const prefix = arrow ? arrow[1].trim() : (word ? word[1] : "");
+  if (prefix.length < 2 || (!arrow && /^\d/.test(prefix))) { acClose(); return; }
+  const items = acCandidates(prefix, !!arrow);
+  if (!items.length) { acClose(); return; }
+  acItems = items; acIndex = 0; acInput = inp; acRange = [pos - prefix.length, pos];
+  if (!acBox) { acBox = document.createElement("div"); acBox.className = "ac"; document.body.appendChild(acBox); }
+  acRender();
+  const r = inp.getBoundingClientRect();
+  acBox.style.left = (r.left + window.scrollX + 12) + "px";
+  acBox.style.top = (r.bottom + window.scrollY + 2) + "px";
+}
+function acRender() {
+  acBox.innerHTML = acItems.map((e, i) => `<div class="${i === acIndex ? "sel" : ""}" data-i="${i}"><span class="sig">${esc(e.kind === "function" ? e.signature : e.name)}</span><span class="doc">${esc(e.doc)}</span></div>`).join("");
+  acBox.onmousedown = ev => { const d = ev.target.closest("[data-i]"); if (d) { ev.preventDefault(); acAccept(+d.dataset.i); } };
+}
+function acAccept(i) {
+  const e = acItems[i]; if (!e || !acInput) return;
+  let text = e.name;
+  if (e.kind === "function") { const m = /\((.*)\)/.exec(e.signature); text = e.name + "(" + (m ? m[1] : "") + ")"; }
+  const inp = acInput, [a, b] = acRange;
+  inp.value = inp.value.slice(0, a) + text + inp.value.slice(b);
+  const m2 = e.kind === "function" ? /\(/.exec(text) : null;
+  const caret = m2 ? a + m2.index + 1 : a + text.length;
+  const argEnd = m2 ? a + text.length - 1 : caret;
+  inp.setSelectionRange(caret, argEnd);
+  inp.dispatchEvent(new Event("input"));
+  acClose();
+  inp.focus();
+}
+function acKey(ev) {
+  if (!acBox || acInput !== ev.target) return false;
+  if (ev.key === "ArrowDown") { acIndex = (acIndex + 1) % acItems.length; acRender(); ev.preventDefault(); return true; }
+  if (ev.key === "ArrowUp") { acIndex = (acIndex - 1 + acItems.length) % acItems.length; acRender(); ev.preventDefault(); return true; }
+  if (ev.key === "Tab" || (ev.key === "Enter" && !ev.shiftKey)) { acAccept(acIndex); ev.preventDefault(); return true; }
+  if (ev.key === "Escape") { acClose(); ev.preventDefault(); return true; }
+  return false;
+}
+
 // ---------- Wiring ----------
 function init() {
   $("#title").addEventListener("input", ev => { state.title = ev.target.value; setDirty(true); });
@@ -672,6 +754,8 @@ function init() {
     ev.target.value = "";
   });
   $("#btn-ref").onclick = () => { $("#ref").classList.toggle("hidden"); $("#btn-ref").classList.toggle("on"); };
+  buildPalette();
+  $("#btn-palette").onclick = () => { $("#palette").classList.toggle("hidden"); $("#btn-palette").classList.toggle("on"); };
   $("#btn-reload").onclick = () => loadCatalog(true);
   $("#ref-search").addEventListener("input", renderCatalog);
   $("#ref-list").addEventListener("click", ev => {
