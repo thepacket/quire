@@ -17,12 +17,12 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
 
+dependencies = ["sympy>=1.13", "numpy>=1.26", "scipy>=1.12", "CoolProp>=6.6", "periodictable>=1.7"]
 [project.urls]
 Homepage = "https://github.com/thepacket/quire"
 Repository = "https://github.com/thepacket/quire"
 Issues = "https://github.com/thepacket/quire/issues"
 Discussions = "https://github.com/thepacket/quire/discussions"
-dependencies = ["sympy>=1.13", "numpy>=1.26", "scipy>=1.12", "CoolProp>=6.6", "periodictable>=1.7"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
