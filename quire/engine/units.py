@@ -277,6 +277,8 @@ def unit_label(expr) -> str:
     """
     if not has_units(expr):
         return ""
+    if isinstance(expr, sp.Piecewise):
+        expr = next((e for e, _ in expr.args if has_units(e)), expr.args[0].expr)
     try:
         dim = u.Dimension(SI.get_dimensional_expr(to_base(expr)))
     except Exception:  # noqa: BLE001
@@ -290,9 +292,9 @@ def unit_label(expr) -> str:
                 return _abbrev(cand)
         except Exception:  # noqa: BLE001
             continue
-    deps = dimsys.get_dimensional_dependencies(dim)
-    num = [f"{_BASE_ABBREV.get(str(k), str(k))}" + (f"^{v}" if v != 1 else "") for k, v in deps.items() if v > 0]
-    den = [f"{_BASE_ABBREV.get(str(k), str(k))}" + (f"^{-v}" if v != -1 else "") for k, v in deps.items() if v < 0]
+    deps = {str(getattr(k, "name", k)): v for k, v in dimsys.get_dimensional_dependencies(dim).items()}
+    num = [f"{_BASE_ABBREV.get(k, k)}" + (f"^{v}" if v != 1 else "") for k, v in deps.items() if v > 0]
+    den = [f"{_BASE_ABBREV.get(k, k)}" + (f"^{-v}" if v != -1 else "") for k, v in deps.items() if v < 0]
     label = "*".join(num) if num else "1"
     if den:
         label += "/" + ("(" + "*".join(den) + ")" if len(den) > 1 else den[0])
