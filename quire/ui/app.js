@@ -533,30 +533,43 @@ async function loadCatalog(reload = false) {
   renderCatalog();
   if (reload) evaluateNow();
 }
+const REF_KEY = "quire.ref.collapsed";
+function loadCollapsed() { try { return new Set(JSON.parse(localStorage.getItem(REF_KEY) || "null") || []); } catch (e) { return new Set(); } }
+function saveCollapsed(set) { try { localStorage.setItem(REF_KEY, JSON.stringify([...set])); } catch (e) { /* ignore */ } }
+
 function renderCatalog() {
   const q = $("#ref-search").value.trim().toLowerCase();
   const cat = state.catalog; if (!cat) return;
   $("#ref-modules").innerHTML = "Modules: " + cat.modules.map(m =>
     m.error ? `<span class="bad" title="${esc(m.error)}">${esc(m.name)} (failed)</span>` : `<span title="${esc(m.description)}">${esc(m.name)}</span>`
-  ).join(", ") + (cat.conflicts && cat.conflicts.length ? `<div class="bad">${cat.conflicts.map(esc).join("<br>")}</div>` : "");
+  ).join(", ") + (cat.conflicts && cat.conflicts.length ? `<div class="bad">${cat.conflicts.map(esc).join("<br>")}</div>` : "")
+    + `<div class="ref-tools"><button data-all="open">expand all</button><button data-all="close">collapse all</button></div>`;
   const groups = new Map();
   for (const e of cat.entries) {
     if (q && !(e.name.toLowerCase().includes(q) || e.doc.toLowerCase().includes(q) || e.signature.toLowerCase().includes(q))) continue;
-    if (!groups.has(e.category)) groups.set(e.category, []);
-    groups.get(e.category).push(e);
+    const key = e.category || "Other";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
   }
+  if (!state.refCollapsed) state.refCollapsed = loadCollapsed();
+  if (!state.refInit) { state.refInit = true; if (!localStorage.getItem(REF_KEY)) { for (const c of groups.keys()) state.refCollapsed.add(c); } }
   let h = "";
   for (const [c, items] of groups) {
-    h += `<div class="ref-cat">${esc(c || "Other")}</div>`;
+    const open = q ? true : !state.refCollapsed.has(c);
+    h += `<div class="ref-cat ${open ? "open" : ""}" data-cat="${esc(c)}"><span class="caret">${open ? "▾" : "▸"}</span>${esc(c)} <span class="count">${items.length}</span></div>`;
+    if (!open) continue;
+    h += `<div class="ref-items">`;
     for (const e of items) {
       const insert = e.example || (e.kind === "function" ? e.signature : e.name);
       h += `<div class="ref-item" data-insert="${esc(insert)}" title="Click to insert">
         <span class="sig">${esc(e.kind === "function" ? e.signature : e.name)}${e.module !== "core" ? ` <span class="mod">${esc(e.module)}</span>` : ""}</span>
         <span class="doc">${esc(e.doc)}</span></div>`;
     }
+    h += `</div>`;
   }
   $("#ref-list").innerHTML = h || `<div class="ref-cat">No matches</div>`;
 }
+
 function insertAtCursor(text) {
   let inp = state.activeInput;
   if (!inp || !document.body.contains(inp)) {
@@ -641,7 +654,21 @@ function init() {
   $("#btn-ref").onclick = () => { $("#ref").classList.toggle("hidden"); $("#btn-ref").classList.toggle("on"); };
   $("#btn-reload").onclick = () => loadCatalog(true);
   $("#ref-search").addEventListener("input", renderCatalog);
-  $("#ref-list").addEventListener("click", ev => { const it = ev.target.closest(".ref-item"); if (it) insertAtCursor(it.dataset.insert); });
+  $("#ref-list").addEventListener("click", ev => {
+    const head = ev.target.closest(".ref-cat[data-cat]");
+    if (head) {
+      const c = head.dataset.cat;
+      if (state.refCollapsed.has(c)) state.refCollapsed.delete(c); else state.refCollapsed.add(c);
+      saveCollapsed(state.refCollapsed); renderCatalog(); return;
+    }
+    const it = ev.target.closest(".ref-item"); if (it) insertAtCursor(it.dataset.insert);
+  });
+  $("#ref-modules").addEventListener("click", ev => {
+    const b = ev.target.closest("button[data-all]"); if (!b || !state.catalog) return;
+    const cats = new Set(state.catalog.entries.map(e => e.category || "Other"));
+    state.refCollapsed = b.dataset.all === "close" ? cats : new Set();
+    saveCollapsed(state.refCollapsed); renderCatalog();
+  });
   $("#modal-close").onclick = closeModal;
   $("#modal").addEventListener("click", ev => { if (ev.target.id === "modal") closeModal(); });
   document.querySelector(".add-end").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) insertCell(b.dataset.add, state.cells.length, true); });
