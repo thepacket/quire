@@ -368,7 +368,7 @@ function renderCatalog() {
   const cat = state.catalog; if (!cat) return;
   $("#ref-modules").innerHTML = "Modules: " + cat.modules.map(m =>
     m.error ? `<span class="bad" title="${esc(m.error)}">${esc(m.name)} (failed)</span>` : `<span title="${esc(m.description)}">${esc(m.name)}</span>`
-  ).join(", ");
+  ).join(", ") + (cat.conflicts && cat.conflicts.length ? `<div class="bad">${cat.conflicts.map(esc).join("<br>")}</div>` : "");
   const groups = new Map();
   for (const e of cat.entries) {
     if (q && !(e.name.toLowerCase().includes(q) || e.doc.toLowerCase().includes(q) || e.signature.toLowerCase().includes(q))) continue;

@@ -113,6 +113,22 @@ with initial values, `odesolve` for numeric solutions that behave like functions
 be plotted), and two backend CAS bridges, `maxima` and `fricas`. Extra module folders:
 `--modules path`.
 
+### Numerical methods (`modules/numerics`)
+
+Organised by how the approximation is built, and every result carries a note saying so:
+
+| family | functions |
+|---|---|
+| series and expansions | `taylor`, `chebyshev_approx`, `pade`, `series_solve` |
+| iterative | `newton_raphson`, `fixed_point`, `bisection`, `secant`, `jacobi_iter`, `gauss_seidel_iter`, and `*_steps` tables |
+| discretized | `finite_difference` (symbolic stencil or number), `fdm_solve`, `bvp_solve`, `fem_solve`, `heat_fdm` |
+| time-stepping | `euler`, `heun`, `rk4` with fixed step and `*_steps` tables; `odesolve` in `ode` is the adaptive one |
+
+Solvers return functions of the independent variable, so `y_e = euler(-2 y, y, x, 0, 1, 3, 0.25)`
+can be called (`y_e(1)`), plotted against `rk4` and the exact `exp(-2 x)`, and its domain is
+enforced. `heat_fdm` returns `u(x, t)`; plot `u(x, 0.05)`. The "Numerical methods" example
+worksheet walks through all four families.
+
 ### Backends
 
 A module can also register a *fallback* for an operation:

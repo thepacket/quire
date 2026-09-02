@@ -96,6 +96,17 @@ class Registry:
                 ns[e.name] = e.value
         return ns
 
+    def conflicts(self) -> list[str]:
+        """Names defined by more than one module (the later module wins)."""
+        seen: dict[str, str] = {}
+        out = []
+        for mod in self.modules:
+            for e in mod.entries:
+                if e.name in seen and seen[e.name] != mod.name:
+                    out.append(f"'{e.name}' is defined by both {seen[e.name]} and {mod.name}; {mod.name} wins")
+                seen[e.name] = mod.name
+        return out
+
     def catalog(self) -> dict:
         return {
             "modules": [
@@ -104,6 +115,7 @@ class Registry:
                 for m in self.modules
             ],
             "entries": [e.describe() for m in self.modules for e in m.entries if not e.hidden],
+            "conflicts": self.conflicts(),
         }
 
 

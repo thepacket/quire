@@ -306,3 +306,7 @@ def test_recognized_integral_carries_note(ev):
     r = run(ev, "integrate(ln(1 + x^2)/(1 + x^2), x, 0, oo)")[0]
     assert r["ok"] and r["outputs"][0]["plain"] == "pi*log(2)" and "recognized" in r["outputs"][0]["notes"][0]
     assert last_plain(ev, "recognize(0.2722)") == "0.272200000000000"
+
+
+def test_no_module_name_conflicts(ev):
+    assert ev.registry.conflicts() == []
