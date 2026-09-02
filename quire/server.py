@@ -77,6 +77,23 @@ class App:
         p.write_text(json.dumps(doc, indent=1))
         return {"saved": p.name[: -len(EXT)], "path": str(p)}
 
+    def upload(self, filename: str, content_b64: str):
+        """Store a data file (csv, tsv, txt, xlsx) under <worksheets>/data as an identifier-safe name."""
+        stem, dot, ext = filename.rpartition(".")
+        ext = ("." + ext.lower()) if dot else ""
+        if ext not in (".csv", ".tsv", ".txt", ".xlsx"):
+            raise ValueError("Only .csv, .tsv, .txt and .xlsx files can be uploaded.")
+        safe = re.sub(r"\W+", "_", stem or "data").strip("_") or "data"
+        if safe[0].isdigit():
+            safe = "d_" + safe
+        raw = base64.b64decode(content_b64)
+        if len(raw) > 20 * 1024 * 1024:
+            raise ValueError("Files are limited to 20 MB.")
+        d = self.worksheets / "data"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / (safe + ext)).write_bytes(raw)
+        return {"name": safe, "path": str(d / (safe + ext))}
+
 
 def make_handler(app: App):
     class Handler(BaseHTTPRequestHandler):
@@ -139,6 +156,8 @@ def make_handler(app: App):
                 if self.path == "/api/reload":
                     app.reload()
                     return self._json(app.catalog())
+                if self.path == "/api/upload":
+                    return self._json(app.upload(body["filename"], body["content"]))
             except FileNotFoundError:
                 return self._json({"error": "No such worksheet."}, 404)
             except (ValueError, KeyError) as exc:

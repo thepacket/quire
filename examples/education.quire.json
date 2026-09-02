@@ -1,0 +1,28 @@
+{
+ "quire": 1,
+ "title": "Steps, checks and data",
+ "cells": [
+  {"type": "text", "source": "# Education and tooling\nDerivations shown step by step, checks that catch mistakes, and data read from files."},
+  {"type": "text", "source": "## Step by step"},
+  {"type": "math", "source": "steps_diff(x^2 sin(x), x)"},
+  {"type": "math", "source": "steps_integrate(x exp(x), x)"},
+  {"type": "math", "source": "steps_partial_fractions((3 x + 5)/(x^2 + 3 x + 2), x)"},
+  {"type": "math", "source": "steps_gauss(matrix([[2, 1, -1], [-3, -1, 2], [-2, 1, 2]]), [8, -11, -3])"},
+  {"type": "math", "source": "steps_solve(x^2 - 5 x + 6 == 0, x)"},
+  {"type": "text", "source": "## Verify\nDimensions, identities and error propagation. The second identity is false, and the counterexample says where."},
+  {"type": "math", "source": "m = 2 kg\na = 3 m/s^2\nF = m a"},
+  {"type": "math", "source": "check_units(F == 1/2 m a^2)"},
+  {"type": "math", "source": "check_identity(sin(x)^2 + cos(x)^2 == 1)"},
+  {"type": "math", "source": "counterexample((x + y)^2 == x^2 + y^2)"},
+  {"type": "math", "source": "propagate(V/I, [[V, 12.0, 0.1], [I, 2.0, 0.05]])"},
+  {"type": "math", "source": "propagate(sqrt(L/g), [[L, L, dL], [g, g, dg]])"},
+  {"type": "math", "source": "check_ode(D(y, x, 2) + y == 0, y, x, sin(x) + cos(x))"},
+  {"type": "text", "source": "## Data\nThe bundled `measurements.csv`. Upload your own with the **Data** button and refer to it by name."},
+  {"type": "math", "source": "read_csv(measurements)"},
+  {"type": "math", "source": "t = column(measurements, time)\nT = column(measurements, temperature)"},
+  {"type": "math", "source": "fit = linfit(t, T)"},
+  {"type": "plot", "kind": "scatter", "exprs": "t", "expr2": "T"},
+  {"type": "plot", "kind": "function", "exprs": "fit[0] x + fit[1]", "xmin": "0", "xmax": "5", "var": "x"},
+  {"type": "math", "source": "linear_regression(t, T)"}
+ ]
+}

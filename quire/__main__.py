@@ -20,6 +20,7 @@ def main():
                     help="require this password (HTTP Basic auth); env QUIRE_PASSWORD")
     args = ap.parse_args()
     module_dirs = [ROOT / "modules"] + (args.modules or [])
+    os.environ["QUIRE_WORKSHEETS"] = str(args.dir)  # modules that read data files look here
     app = App(args.dir, module_dirs, ROOT / "examples", password=args.password)
     serve(app, args.host, args.port, not args.no_browser and args.host in ("127.0.0.1", "localhost"))
 

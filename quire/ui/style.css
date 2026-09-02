@@ -125,3 +125,10 @@ svg.plot { cursor: crosshair; }
 .slider-row { display: flex; align-items: center; gap: 10px; padding: 2px 10px 6px; }
 .slider-row input[type=range] { width: 260px; accent-color: var(--accent); }
 .slider-val { font-family: var(--mono); font-size: 13px; color: var(--muted); min-width: 60px; }
+
+.steps { margin: 4px 10px 8px; padding: 6px 10px; border-left: 2px solid var(--line); font-size: 14px; }
+.steps-title { font-weight: 600; margin-bottom: 4px; color: #4b5563; }
+.step { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 3px 0; }
+.step-n { color: var(--muted); font-size: 12px; min-width: 18px; }
+.step-text { color: #4b5563; }
+.step-math { font-size: 15px; }

@@ -335,8 +335,9 @@ function renderResult(res) {
       let h = o.head ? katexHtml(`${o.head} = ${o.latex}`) : katexHtml(o.latex);
       if (o.approx) h += `<span class="approx">${katexHtml(`\\approx ${o.approx}`)}</span>`;
       const notes = (o.notes || []).map(n => `<div class="note">${esc(n)}</div>`).join("");
+      const steps = o.steps ? `<div class="steps">${o.steps_title ? `<div class="steps-title">${esc(o.steps_title)}</div>` : ""}${o.steps.map((st, i) => `<div class="step"><span class="step-n">${i + 1}.</span><span class="step-text">${esc(st.text)}</span>${st.latex ? `<span class="step-math">${katexHtml(st.latex)}</span>` : ""}</div>`).join("")}</div>` : "";
       const sl = o.slider ? `<div class="slider-row"><input type="range" class="slider" data-line="${o.slider.line}" min="${o.slider.min}" max="${o.slider.max}" step="${o.slider.step || (o.slider.max - o.slider.min) / 200}" value="${o.slider.value}"><span class="slider-val">${fmtVal(o.slider.value)}</span></div>` : "";
-      return `<div class="out-line">${h}</div>${sl}${notes}`;
+      return `${steps}<div class="out-line">${h}</div>${sl}${notes}`;
     }).join("");
     for (const sl of out.querySelectorAll("input.slider")) sl.addEventListener("input", () => onSlider(cell, el, sl));
     warn.textContent = res.warning || "";
@@ -657,6 +658,19 @@ function init() {
   $("#btn-examples").onclick = () => openDialog(true);
   $("#btn-save").onclick = () => save(false);
   $("#btn-saveas").onclick = () => save(true);
+  $("#btn-data").onclick = () => $("#data-file").click();
+  $("#data-file").addEventListener("change", async ev => {
+    const file = ev.target.files[0]; if (!file) return;
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf); let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    try {
+      const r = await api("/api/upload", { filename: file.name, content: btoa(bin) });
+      status(`Uploaded as data file <b>${esc(r.name)}</b>: use read_csv(${esc(r.name)}) or column(${esc(r.name)}, header)`);
+      evaluateNow();
+    } catch (e) { alert(e.message); }
+    ev.target.value = "";
+  });
   $("#btn-ref").onclick = () => { $("#ref").classList.toggle("hidden"); $("#btn-ref").classList.toggle("on"); };
   $("#btn-reload").onclick = () => loadCatalog(true);
   $("#ref-search").addEventListener("input", renderCatalog);

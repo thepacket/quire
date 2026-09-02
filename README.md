@@ -182,6 +182,17 @@ Temperatures are absolute: write `from_celsius(25)` for 25 °C and `to_celsius(T
 Rates per second are written `0.1 Hz` or `0.1/second`, because `0.1/s` divides by the
 variable `s`. The "Engineering modules" example has one worked problem per module.
 
+### Education and tooling modules
+
+| module | what it carries |
+|---|---|
+| `stepwise` | `steps_diff`, `steps_integrate`, `steps_partial_fractions`, `steps_gauss`, `steps_solve`: each returns the result plus the derivation, rendered under the cell one rule per line (product rule, chain rule, substitution, parts, row operations, the quadratic formula) |
+| `verify` | `dimension`, `check_units(lhs == rhs)`, `check_identity` at random complex points, `counterexample`, `propagate(expr, [[x, value, error], ...])` for uncertainty propagation (symbolic or numeric), `significant`, `percent_error`, `check_solution`, `check_ode` |
+| `data` | `read_csv(name)`, `column(name, header)`, `row_of`, `headers`, `table_size`, `data_files`; files live in `<worksheets>/data/` and are named without extension. The **Data** button uploads a CSV, TSV or Excel file there |
+
+A result that comes with a derivation is still an ordinary value: `d = steps_diff(x^3, x)` then
+`d + 1` works. The "Steps, checks and data" example shows all three modules.
+
 ### Mathematics modules
 
 | module | what it carries |

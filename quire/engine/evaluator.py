@@ -15,6 +15,7 @@ from sympy.logic.boolalg import BooleanAtom
 from . import units as U
 from .errors import QuireError
 from .parser import GREEK_NAMES, SYM_ALIAS, UNIT_ALIAS, alias_units, classify, identifiers, parse
+from .steps import Steps
 
 INTERNAL_NAMES = {"Symbol", "Integer", "Float", "Rational", "Function", "Lambda"}
 ASSUME_KEY = "$assume"  # env slot for symbol assumptions; '$' cannot appear in a name
@@ -251,6 +252,8 @@ class Evaluator:
                     target = self.parse_unit(st.convert_to) if st.convert_to else None
                     value = DefinedFunction(st.name, st.params, value, target, st.convert_to,
                                             symbols=[ns[p] for p in st.params])
+                elif isinstance(value, Steps):
+                    value.result = self.finalize(value.result, st.convert_to)
                 else:
                     value = self.finalize(value, st.convert_to)
                 if st.kind in ("definition", "function") and st.name in self.unit_names and len(st.name) > 1:
@@ -258,7 +261,7 @@ class Evaluator:
                                f"means the unit ({U.UNIT_TABLE[st.name][1]}), as in '3 {st.name}'; "
                                f"write '3*{st.name}' for three times yours.")
                 if st.kind in ("definition", "function"):
-                    env[st.name] = value
+                    env[st.name] = value.result if isinstance(value, Steps) else value
                     defines.append(st.name)
                 self.last_values.append(value)
                 out = self.render(st, value, env.get(DIGITS_KEY))
@@ -352,6 +355,12 @@ class Evaluator:
         return value
 
     def render(self, st, value, digits=None) -> dict:
+        if isinstance(value, Steps):
+            out = self.render(st, value.result, digits)
+            out["steps"] = value.describe()
+            if value.title:
+                out["steps_title"] = value.title
+            return out
         shown = self.display_value(value, digits)
         out = {"kind": st.kind, "latex": to_latex(shown), "plain": to_plain(shown)}
         if st.kind in ("definition", "function"):
