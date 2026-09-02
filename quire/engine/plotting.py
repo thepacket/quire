@@ -75,7 +75,7 @@ def _numeric(expr, var, x_unit=1):
     U.check_dimensions(expr)
     label = U.unit_label(expr)
     num, _ = U.strip_units(expr)
-    f = sp.lambdify(var, num, modules=["numpy", _NUMPY_EXTRA])
+    f = sp.lambdify(var, num, modules=[_NUMPY_EXTRA, "scipy", "numpy"])
     return f, label
 
 
