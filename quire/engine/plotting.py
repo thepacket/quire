@@ -19,6 +19,16 @@ from .parser import identifiers, parse, split_top
 MAX_POINTS = 3000
 
 
+def _reduce(op):
+    def fn(*args):
+        arrs = np.broadcast_arrays(*[np.asarray(a, dtype=float) for a in args])
+        return op.reduce(np.stack(arrs))
+    return fn
+
+
+_NUMPY_EXTRA = {"Heaviside": lambda x, *_: np.heaviside(x, 0.5), "Max": _reduce(np.maximum), "Min": _reduce(np.minimum)}
+
+
 def _clean(ys, n=None) -> list:
     ys = np.asarray(ys)
     if ys.ndim == 0:
@@ -65,7 +75,7 @@ def _numeric(expr, var, x_unit=1):
     U.check_dimensions(expr)
     label = U.unit_label(expr)
     num, _ = U.strip_units(expr)
-    f = sp.lambdify(var, num, modules=["numpy", {"Heaviside": lambda x, *_: np.heaviside(x, 0.5)}])
+    f = sp.lambdify(var, num, modules=["numpy", _NUMPY_EXTRA])
     return f, label
 
 

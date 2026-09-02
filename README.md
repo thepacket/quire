@@ -182,6 +182,18 @@ Temperatures are absolute: write `from_celsius(25)` for 25 °C and `to_celsius(T
 Rates per second are written `0.1 Hz` or `0.1/second`, because `0.1/s` divides by the
 variable `s`. The "Engineering modules" example has one worked problem per module.
 
+### Data and probability modules
+
+| module | what it carries |
+|---|---|
+| `probability` | distributions that stay symbolic: `normal(mu, sigma)`, `uniform`, `exponential`, `gamma_dist`, `beta_dist`, `lognormal`, `weibull`, `student_t`, `chi_squared`, `binomial_dist`, `poisson`, `geometric_dist`, `bernoulli_dist`, and more; `pdf`, `cdf`, `expected(expr)` for any expression in random variables, `variance_of`, `moment_of`, `quantile_of`, `prob(X > a)`, conditional probability and expectation, `mgf`, `sample_from`; `bayes` and `bayes_update` |
+| `stats` | `mean`, `median`, `variance`, `stdev`, `covariance`, `correlation`, `percentile`, `describe`, `histogram`; `linfit`, `linear_regression`, `polyfit`, `expfit`, `powerfit`, `r_squared`; `confidence_interval`, one- and two-sample and paired `t_test`, `chi2_test` (goodness of fit or independence), `anova`, `normality_test`, `bootstrap_mean` |
+| `finance` | `fv`, `pv`, `pmt`, `nper`, `rate_solve`, annuities and perpetuities, `amortization` tables, `npv`, `irr`, `payback_period`, effective and real rates, `cagr`, `bond_price`, `bond_duration`, `bond_ytm`, `black_scholes_call` / `put` (symbolic in every parameter), delta and vega |
+| `actuarial` | `makeham_qx` mortality rates, `life_table`, `survival`, `life_expectancy`, `annuity_due_factor`, whole-life, term and endowment insurance, `net_annual_premium`, `reserve` |
+
+Rates are per period as decimals; money is a plain number. Every test returns `[statistic, p]`
+with a note naming the test. The "Data and probability" example covers all four.
+
 ### Science modules
 
 | module | what it carries |
