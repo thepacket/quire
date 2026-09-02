@@ -280,10 +280,10 @@ def simplify(expr):
 def register(api):
     if not MAXIMA:
         return
-    api.fallback("integrate", integrate)
-    api.fallback("limit", limit)
-    api.fallback("sum", summation)
-    api.fallback("simplify", simplify)
+    api.fallback("integrate", integrate, priority=10)
+    api.fallback("limit", limit, priority=10)
+    api.fallback("sum", summation, priority=10)
+    api.fallback("simplify", simplify, priority=10)
     M = "Maxima backend"
     api.function("maxima_integrate", lambda f, x, a=None, b=None: integrate(f, [(x, a, b)] if a is not None else [x]),
                  signature="maxima_integrate(f, x, a, b)", doc="integrate with Maxima", category=M,

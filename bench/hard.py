@@ -70,6 +70,16 @@ p(J, "simplify(diff(integrate(1/(2 + cos(x)), x), x) - 1/(2 + cos(x)))", "0")
 p(J, "simplify(diff(integrate(ln(x)^2, x), x) - ln(x)^2)", "0")
 p(J, "simplify(diff(integrate(sqrt(tan(x)), x), x) - sqrt(tan(x)))", "0")
 p(J, "simplify(diff(integrate(1/(x^2 sqrt(x^2 + 1)), x), x) - 1/(x^2 sqrt(x^2 + 1)))", "0")
+p(J, "simplify(diff(integrate(exp(x) (x - 1)/x^2, x), x) - exp(x) (x - 1)/x^2)", "0")
+p(J, "simplify(diff(integrate(exp(x) (x ln(x) + 1)/x, x), x) - exp(x) (x ln(x) + 1)/x)", "0")
+p(J, "simplify(diff(integrate(exp(x) (x^2 + x + 1)/(x + 1)^2, x), x) - exp(x) (x^2 + x + 1)/(x + 1)^2)", "0")
+p(J, "simplify(diff(integrate((ln(x) - 1)/ln(x)^2, x), x) - (ln(x) - 1)/ln(x)^2)", "0")
+p(J, "simplify(diff(integrate(ln(x)^2/x^2, x), x) - ln(x)^2/x^2)", "0")
+p(J, "simplify(diff(integrate(ln(x)/(x + 1)^2, x), x) - ln(x)/(x + 1)^2)", "0")
+p(J, "simplify(diff(integrate((x^2 + 1)/(x^4 + 1), x), x) - (x^2 + 1)/(x^4 + 1))", "0")
+p(J, ["assume x > 0", "simplify(diff(integrate(1/(x sqrt(1 + x^2)), x), x) - 1/(x sqrt(1 + x^2)))"], "0")
+p(J, "simplify(diff(integrate(x exp(x)/(1 + x)^2, x), x) - x exp(x)/(1 + x)^2)", "0")
+p(J, "simplify(diff(integrate((2 x^2 + 1) exp(x^2) - 1, x), x) - (2 x^2 + 1) exp(x^2) + 1)", "0")
 p(J, "integrate(sin(x)/x, x)", "Si(x)")
 p(J, "integrate(exp(x^2), x)", "sqrt(pi) erfi(x)/2")
 p(J, "integrate(1/ln(x), x)", "li(x)")
@@ -141,7 +151,6 @@ KNOWN_GAPS = {
     "assume s > 1 | integrate(x^(s - 1)/(exp(x) - 1), x, 0, oo)": "Gamma(s) zeta(s): neither SymPy nor Maxima",
     "integrate(ln(1 + x^2)/(1 + x^2), x, 0, oo)": "SymPy returns a Meijer G term; Maxima leaves it unevaluated",
     "integrate(ln(1 + x)/(1 + x^2), x, 0, 1)": "SymPy hangs; Maxima gives a complex polylog form",
-    "simplify(diff(integrate(exp(x) (1 + x)/(x^2), x), x) - exp(x) (1 + x)/x^2)": "SymPy's simplify hangs on expint forms",
     "simplify(besselj(n, x) diff(bessely(n, x), x) - bessely(n, x) diff(besselj(n, x), x))": "Bessel Wronskian not known to SymPy",
     "assume x > 0 | simplify(atan(x) + atan(1/x))": "no arctangent addition rule in SymPy or Maxima",
 }

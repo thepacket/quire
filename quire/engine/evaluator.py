@@ -120,7 +120,10 @@ def approx_of(value, digits: int):
     num, unit = U.split_units(val)
     if not num.is_number:
         return None
-    lat, plain = fmt_number(num, digits)
+    try:
+        lat, plain = fmt_number(num, digits)
+    except (TypeError, ValueError):
+        return None
     if unit != 1:
         lat += " \\, " + pretty_units(sp.latex(unit))
         plain += " " + str(unit)

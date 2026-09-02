@@ -50,7 +50,13 @@ def _quad(f, ranges):
     fn = sp.lambdify(x, f, modules=["numpy", "scipy"])
     lo = -np.inf if a == -sp.oo else float(a)
     hi = np.inf if b == sp.oo else float(b)
-    val, _ = quad(lambda v: float(np.real(fn(v))), lo, hi, limit=200)
+
+    def g(v):
+        with np.errstate(all="ignore"):
+            y = float(np.real(fn(v)))
+        return y if np.isfinite(y) else 0.0  # overflow far in the tails of a convergent integrand
+
+    val, _ = quad(g, lo, hi, limit=200)
     return val
 
 
@@ -71,15 +77,48 @@ def generic_branch(res):
     return res
 
 
+def _backend_integral_ok(alt, f, ranges) -> bool:
+    """Accept a backend antiderivative only if its derivative matches f numerically,
+    and a definite result with numeric bounds only if it matches quadrature."""
+    from .algebra import numerically_equal
+
+    try:
+        if all(isinstance(r, tuple) for r in ranges):
+            if alt.free_symbols or any(e.free_symbols for r in ranges for e in r[1:]):
+                return True  # symbolic bounds or parameters: nothing cheap to check against
+            val = float(sp.N(alt, 15))
+            ref = _quad(f, ranges)
+            return abs(val - ref) <= 1e-6 * max(1.0, abs(ref))
+        expr = alt
+        for r in ranges:
+            expr = sp.diff(expr, r if not isinstance(r, tuple) else r[0])
+        return numerically_equal(expr, f)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+_UGLY = (sp.Integral, sp.meijerg, sp.exp_polar, sp.hyper, sp.expint, sp.floor)
+
+
+def _ugliness(e) -> int:
+    """Operation count plus a penalty per unevaluated or obscure construct."""
+    return int(sp.count_ops(e)) + 20 * sum(len(e.atoms(k)) for k in _UGLY)
+
+
 def _integrate(f, *args):
     ranges = _ranges(args)
     res = generic_branch(prune_piecewise(sp.integrate(f, *ranges), hooks.context.get("bounds", {})))
     indefinite = any(not isinstance(r, tuple) for r in ranges)
-    ugly = res.has(sp.Integral, sp.meijerg, sp.exp_polar, sp.hyper) or (indefinite and res.has(sp.floor))
+    if res.has(sp.Integral) and res.has(sp.oo, sp.zoo, sp.nan):
+        res = sp.Integral(f, *ranges)  # a divergent-looking mix of oo and an unevaluated part: treat as no answer
+    ugly = res.has(sp.Integral, sp.meijerg, sp.exp_polar, sp.hyper) or (indefinite and res.has(sp.floor, sp.expint))
     if ugly and hooks.available("integrate"):
-        alt = hooks.run("integrate", f, ranges)
-        if alt is not None and (res.has(sp.Integral) or sp.count_ops(alt) < sp.count_ops(res)):
-            return alt
+        # Every verified backend answer competes; the least ugly wins (sympy's own only if it has one).
+        candidates = hooks.run_all("integrate", f, ranges, accept=lambda a: _backend_integral_ok(a, f, ranges))
+        if candidates:
+            best = min(candidates, key=_ugliness)
+            if res.has(sp.Integral) or _ugliness(best) < _ugliness(res):
+                return best
     if isinstance(res, sp.Integral) and not res.free_symbols and all(isinstance(r, tuple) for r in ranges):
         # No closed form found; a definite integral with numeric bounds still has a value.
         try:

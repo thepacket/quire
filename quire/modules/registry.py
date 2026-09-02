@@ -47,15 +47,15 @@ class ModuleAPI:
         self.entries: list[Entry] = []
         self.fallbacks: dict[str, list] = {}
 
-    def fallback(self, operation: str, fn):
-        """Register a backend for an operation ("integrate", "simplify", "solve", "limit", "sum").
+    def fallback(self, operation: str, fn, priority: int = 50):
+        """Register a backend for an operation ("integrate", "simplify", "limit", "sum").
 
-        Core functions call the backends in module order whenever SymPy gives up
-        (an unevaluated Integral, an unchanged expression, no solution). ``fn``
+        Core functions call the backends in priority order (lower first) whenever
+        SymPy gives up (an unevaluated Integral, an unchanged expression). ``fn``
         receives the same arguments as the core operation and returns a sympy
         object or None to pass.
         """
-        self.fallbacks.setdefault(operation, []).append(fn)
+        self.fallbacks.setdefault(operation, []).append((priority, fn))
 
     def function(self, name: str, impl=None, *, signature: str = "", doc: str = "", category: str = "",
                  example: str = "", hidden: bool = False):
@@ -139,6 +139,7 @@ def load_registry(module_dirs: list[Path]) -> Registry:
                 reg.modules.append(_load_from_file(mp, sub.name))
     from . import hooks
 
-    hooks.install({op: [fn for m in reg.modules for fn in m.fallbacks.get(op, [])]
-                   for op in {op for m in reg.modules for op in m.fallbacks}})
+    ops = {op for m in reg.modules for op in m.fallbacks}
+    hooks.install({op: [fn for _, fn in sorted((pf for m in reg.modules for pf in m.fallbacks.get(op, [])),
+                                                key=lambda pf: pf[0])] for op in ops})
     return reg
