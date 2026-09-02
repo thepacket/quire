@@ -148,6 +148,9 @@ def numerically_equal(a, b, tries: int = 4) -> bool:
                 v = -v
             elif not (s_.is_positive or s_.is_nonnegative) and rng.random() < 0.4:
                 v = -v
+            if s_.is_real is None and not s_.is_integer:
+                # No real assumption: sample off the real axis, where branch cuts show up.
+                v = v + sp.I * sp.Rational(rng.randint(-40, 40), rng.randint(1, 9))
             point[s_] = v
         try:
             da = complex(sp.N(a.subs(point), 30))
