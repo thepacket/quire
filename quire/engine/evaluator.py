@@ -18,6 +18,7 @@ from .parser import UNIT_ALIAS, alias_units, classify, identifiers, parse
 
 INTERNAL_NAMES = {"Symbol", "Integer", "Float", "Rational", "Function", "Lambda"}
 ASSUME_KEY = "$assume"  # env slot for symbol assumptions; '$' cannot appear in a name
+BOUNDS_KEY = "$bounds"  # env slot for numeric bounds from 'assume s > 1' (used by backends)
 
 _ASSUMPTION_LATEX = {
     "positive": "{n} > 0", "negative": "{n} < 0", "nonnegative": r"{n} \geq 0", "nonpositive": r"{n} \leq 0",
@@ -181,7 +182,7 @@ class Evaluator:
         assumed = env.get(ASSUME_KEY, {})
         for name, a in assumed.items():
             ns[name] = sp.Symbol(name, **a)
-        ns.update({k: v for k, v in env.items() if k != ASSUME_KEY})
+        ns.update({k: v for k, v in env.items() if not k.startswith("$")})
         for b in bound:
             ns[b] = sp.Symbol(b, **assumed.get(b, {}))
         return ns
@@ -208,6 +209,9 @@ class Evaluator:
 
     # -- one math cell --------------------------------------------------
     def evaluate_math(self, source: str, env: dict) -> dict:
+        from ..modules import hooks
+
+        hooks.context["bounds"] = env.get(BOUNDS_KEY, {})
         outputs, defines, uses = [], [], set()
         error = warning = None
         self.last_values = []  # raw values of each output line (used by the benchmark)
@@ -221,7 +225,7 @@ class Evaluator:
                     continue
                 ns = self.namespace(env, st.params)
                 # names used, ignoring unit phrases such as "3 m" even when m is also defined
-                uses |= (identifiers(alias_units(st.body, self.unit_names)) - set(st.params)) & set(env) - {ASSUME_KEY}
+                uses |= (identifiers(alias_units(st.body, self.unit_names)) - set(st.params)) & set(env) - {ASSUME_KEY, BOUNDS_KEY}
                 value = parse(st.body, ns, self.unit_names)
                 if st.kind == "function":
                     # The body is checked and converted when called: parameters may carry units.
@@ -255,20 +259,31 @@ class Evaluator:
 
     def assume(self, st, env: dict) -> dict:
         assumed = env.setdefault(ASSUME_KEY, {})
+        bounds = env.setdefault(BOUNDS_KEY, {})
         for n in st.names:
-            merged = {**assumed.get(n, {}), **st.assumptions[n]}
+            spec = dict(st.assumptions[n])
+            bound = spec.pop("$bound", None)
+            if bound is not None:
+                bounds.setdefault(n, []).append(bound)
+            merged = {**assumed.get(n, {}), **spec}
             try:
                 sp.Symbol(n, **merged)
             except Exception as exc:  # noqa: BLE001 - inconsistent assumptions
                 raise QuireError(f"Assumptions on '{n}' contradict each other: {exc}") from None
             assumed[n] = merged
-        parts = []
+        parts, plain = [], []
         for n in st.names:
             head = sp.latex(sp.Symbol(n))
+            bound = st.assumptions[n].get("$bound")
+            if bound is not None:
+                op = {">=": r"\geq", "<=": r"\leq", "!=": r"\neq"}.get(bound[0], bound[0])
+                parts.append(f"{head} {op} {sp.latex(bound[1])}")
+                plain.append(f"{n} {bound[0]} {bound[1]}")
+                continue
             for key in st.assumptions[n]:
                 parts.append(_ASSUMPTION_LATEX.get(key, "{n}").format(n=head))
-        return {"kind": "assume", "latex": ",\\ ".join(parts),
-                "plain": "; ".join(f"{n} {' '.join(st.assumptions[n])}" for n in st.names)}
+            plain.append(f"{n} {' '.join(st.assumptions[n])}")
+        return {"kind": "assume", "latex": ",\\ ".join(parts), "plain": "; ".join(plain)}
 
     def finalize(self, value, convert_to: str | None, check: bool = True):
         if isinstance(value, (list, tuple)):

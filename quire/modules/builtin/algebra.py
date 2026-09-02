@@ -3,7 +3,8 @@ import sympy as sp
 
 from ...engine import units as U
 from ...engine.errors import EvalError
-from ._util import as_list, as_residual, pretty_solutions, sym
+from .. import hooks
+from ._util import as_list, as_residual, pretty_solutions, prune_piecewise, sym
 
 _CANDIDATE_UNITS = None
 
@@ -125,12 +126,105 @@ def _linsolve(eqs, *syms):
     return pretty_solutions(res, syms)
 
 
+def numerically_equal(a, b, tries: int = 4) -> bool:
+    """Compare two expressions at random points that respect the symbols' sign assumptions."""
+    import random
+
+    syms = sorted((a.free_symbols | b.free_symbols), key=lambda s: s.name)
+    if not syms:
+        try:
+            return abs(complex(sp.N(a - b, 20))) < 1e-9
+        except (TypeError, ValueError):
+            return False
+    rng = random.Random(7)
+    ok = 0
+    for _ in range(tries * 3):
+        point = {}
+        for s_ in syms:
+            v = sp.Rational(rng.randint(1, 60), rng.randint(1, 9)) + (sp.Rational(1, 7) if not s_.is_integer else 0)
+            if s_.is_integer:
+                v = sp.Integer(rng.randint(2, 12))
+            if s_.is_negative:
+                v = -v
+            elif not (s_.is_positive or s_.is_nonnegative) and rng.random() < 0.4:
+                v = -v
+            point[s_] = v
+        try:
+            da = complex(sp.N(a.subs(point), 30))
+            db = complex(sp.N(b.subs(point), 30))
+        except (TypeError, ValueError, ZeroDivisionError, OverflowError):
+            continue
+        if abs(da - db) > 1e-9 * max(1.0, abs(da), abs(db)):
+            return False
+        ok += 1
+        if ok >= tries:
+            return True
+    return False
+
+
+def denest_sqrt(expr):
+    """sqrt(A + c sqrt(B)) -> sqrt(p) + sqrt(q) when A^2 - c^2 B is a perfect square (symbolic denesting)."""
+    def one(pw):
+        base = pw.base
+        if not isinstance(base, sp.Add):
+            return pw
+        for term in base.args:
+            c, rad = term.as_coeff_Mul()
+            if isinstance(rad, sp.Pow) and rad.exp == sp.S.Half:
+                A, B = base - term, rad.base
+                D = sp.factor(A ** 2 - c ** 2 * B)
+                r = sp.powdenest(sp.sqrt(D), force=True).replace(sp.Abs, lambda z: z)  # p, q are symmetric in r
+                if any(pp.exp == sp.S.Half for pp in r.atoms(sp.Pow)):
+                    continue
+                pq = ((A + r) / 2, (A - r) / 2)
+                return sp.sqrt(sp.factor(pq[0])) + sp.sign(c) * sp.sqrt(sp.factor(pq[1]))
+        return pw
+
+    return expr.replace(lambda e: isinstance(e, sp.Pow) and e.exp == sp.S.Half and isinstance(e.base, sp.Add), one)
+
+
+def _candidates(expr):
+    """Cheap targeted rewrites that sympy's simplify does not try on its own."""
+    if expr.has(sp.erfc, sp.erfi, sp.erf2):
+        yield expr.rewrite(sp.erf)
+    if expr.has(sp.acos, sp.acot, sp.asec, sp.acsc):
+        yield expr.rewrite(sp.asin).rewrite(sp.atan)
+    if expr.has(sp.LambertW):
+        w = sp.Wild("w")
+        yield expr.replace(sp.exp(sp.LambertW(w)), lambda w: w / sp.LambertW(w)) if False else \
+            expr.replace(lambda e: isinstance(e, sp.exp) and isinstance(e.args[0], sp.LambertW),
+                         lambda e: e.args[0].args[0] / e.args[0])
+    if expr.has(sp.polygamma, sp.gamma, sp.binomial, sp.factorial, sp.harmonic):
+        yield sp.expand_func(expr)
+    if expr.has(sp.polygamma):
+        yield expr.rewrite(sp.harmonic)
+    if any(isinstance(pw, sp.Pow) and pw.exp == sp.S.Half for pw in expr.atoms(sp.Pow)):
+        inner = expr.replace(lambda e: isinstance(e, sp.Pow) and e.exp == sp.S.Half,
+                             lambda e: sp.sqrt(sp.factor(e.base)))
+        yield sp.refine(inner)
+    if any(isinstance(pw, sp.Pow) and pw.exp == sp.S.Half and pw.base.has(sp.Pow) for pw in expr.atoms(sp.Pow)):
+        yield sp.sqrtdenest(expr)
+        alt = denest_sqrt(expr)
+        if alt != expr and numerically_equal(alt, expr):
+            yield alt
+    if expr.has(sp.sin, sp.cos, sp.tan):
+        yield sp.trigsimp(sp.expand_trig(expr))
+
+
 def _simplify(expr):
-    expr = sp.sympify(expr)
-    res = sp.simplify(expr)
-    if res.has(sp.erfc, sp.erfi, sp.erf2):
-        alt = sp.simplify(res.rewrite(sp.erf))
+    expr = prune_piecewise(sp.sympify(expr), hooks.context.get("bounds", {}))
+    res = prune_piecewise(sp.simplify(expr), hooks.context.get("bounds", {}))
+    for cand in _candidates(res):
+        try:
+            alt = sp.simplify(cand)
+        except Exception:  # noqa: BLE001
+            continue
         if sp.count_ops(alt) < sp.count_ops(res):
+            res = alt
+    if hooks.available("simplify") and sp.count_ops(res) > 0:
+        alt = hooks.run("simplify", res)
+        # A backend's algebra may assume principal branches; accept only what checks out numerically.
+        if alt is not None and sp.count_ops(alt) < sp.count_ops(res) and numerically_equal(alt, res):
             res = alt
     return res
 

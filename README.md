@@ -98,10 +98,32 @@ def register(api):
 ```
 
 Press ↻ in the reference panel to reload modules without restarting. A module that
-fails to import is listed with its error rather than taking the app down. Two modules
-ship as examples: `stats` (mean, stdev, linfit, correlation) and `ode` (`dsolve` for
-exact solutions with initial values, `odesolve` for numeric solutions that behave like
-functions and can be plotted). Extra module folders: `--modules path`.
+fails to import is listed with its error rather than taking the app down. Three modules
+ship: `stats` (mean, stdev, linfit, correlation), `ode` (`dsolve` for exact solutions
+with initial values, `odesolve` for numeric solutions that behave like functions and can
+be plotted) and `maxima`, a backend CAS. Extra module folders: `--modules path`.
+
+### Backends
+
+A module can also register a *fallback* for an operation:
+
+```python
+api.fallback("integrate", my_integrate)   # also: limit, sum, simplify
+```
+
+Core functions call the backends only when SymPy gives up (an unevaluated integral,
+limit or sum) or returns something worse than the backend (Meijer G terms, `exp_polar`,
+floor-based antiderivatives). Backend simplifications are accepted only if they agree
+with the original numerically at random points, because a backend's algebra may assume
+principal branches. The `maxima` module does this with a local Maxima installation
+(`brew install maxima`); without one it registers nothing. It runs one short-lived
+process per call with stdin closed, answers "is it an integer?" questions generically
+for parameters not declared integer, and never guesses signs. `maxima_integrate`,
+`maxima_limit`, `maxima_sum` and `maxima_simplify` call it explicitly.
+
+`python -m bench.run --hard` runs the hard corpus: definite integrals from the tables,
+special-function identities and large simplifications. Known gaps are listed in
+`bench/hard.py` so a fix shows up as an unexpected pass.
 
 ## How it works
 
@@ -129,6 +151,9 @@ carries `defines` and `uses`, shown under the cell.
 
 ## Known limits
 
+- Symbolic depth is SymPy plus Maxima. The hard corpus shows what is still out of reach
+  (a Gamma-zeta integral, a Bessel Wronskian, one Meijer-G integral); FriCAS would be the
+  next backend if those matter.
 - Evaluation runs in a worker process with a 20 s budget. A cell that exceeds it is
   reported as stopped, the cells below it are skipped for that round, and the worker
   is restarted. Exact `solve` on equations mixing decimals, units and exponentials is

@@ -41,7 +41,7 @@ GLOBAL_DICT = {
 IDENT = r"[A-Za-z_][A-Za-z0-9_]*"
 PRIME_RE = re.compile(rf"(?<![A-Za-z0-9_.])({IDENT})('+)\s*\(")
 INDEX_RE = re.compile(rf"(?<![A-Za-z0-9_.\]])({IDENT})\[")
-ASSUME_REL_RE = re.compile(r"^\s*(.+?)\s*(>=|<=|>|<|!=)\s*0\s*$")
+ASSUME_REL_RE = re.compile(r"^\s*(.+?)\s*(>=|<=|>|<|!=)\s*(-?[0-9][0-9./]*|-?pi|-?[0-9./]*\s*pi)\s*$")
 ASSUME_WORD_RE = re.compile(r"^\s*(.+?)\s+((?:[a-z]+\s*)+)$")
 ASSUMPTION_WORDS = {
     "real": {"real": True}, "positive": {"positive": True}, "negative": {"negative": True},
@@ -303,7 +303,8 @@ def _assume(line: str) -> Statement | None:
         out = [n for n in text.split() if n]
         for n in out:
             if not re.fullmatch(IDENT, n):
-                raise ParseError(f"'{n}' is not a variable name.")
+                raise ParseError(f"'{n}' is not a variable name; assume works on single variables, "
+                                 f"e.g. 'assume a > 0' (write 'assume a > b' as a definition instead).")
         return out
 
     for clause in body.split(","):
@@ -315,7 +316,22 @@ def _assume(line: str) -> Statement | None:
             continue
         m = ASSUME_REL_RE.match(clause)
         if m:
-            these, spec = take_names(m.group(1)), dict(ASSUMPTION_RELATIONS[m.group(2)])
+            op, bound = m.group(2), m.group(3).replace(" ", "")
+            val = sp.sympify(bound.replace("pi", "*pi").lstrip("*")) if "pi" in bound else sp.Rational(bound) \
+                if "." not in bound else sp.Float(bound)
+            if val == 0:
+                spec = dict(ASSUMPTION_RELATIONS[op])
+            elif op in (">", ">=") and val > 0:
+                spec = {"positive": True}
+            elif op in ("<", "<=") and val < 0:
+                spec = {"negative": True}
+            elif op == "!=":
+                spec = {}
+            else:
+                spec = {"real": True}
+            these = take_names(m.group(1))
+            if val != 0:
+                spec["$bound"] = (op, val)
         else:
             m = ASSUME_WORD_RE.match(clause)
             if not m:
@@ -327,7 +343,10 @@ def _assume(line: str) -> Statement | None:
                 spec.update(ASSUMPTION_WORDS[w])
         for n in pending + these:
             names.append(n)
-            assumptions[n] = {**assumptions.get(n, {}), **spec}
+            merged = {**assumptions.get(n, {}), **spec}
+            if "$bound" in spec:
+                merged["$bound"] = spec["$bound"]
+            assumptions[n] = merged
         pending = []
     if pending or not names:
         raise ParseError("Write e.g. 'assume x > 0', 'assume n integer' or 'assume x, y real'.")

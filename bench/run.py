@@ -17,11 +17,12 @@ from quire.engine.evaluator import DefinedFunction, Evaluator
 from quire.modules.registry import load_registry
 
 from .problems import PROBLEMS
+from .hard import HARD
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
-class Timeout(Exception):
+class Timeout(BaseException):  # not Exception: must not be swallowed by the engine's error handling
     pass
 
 
@@ -102,11 +103,12 @@ def run_one(ev: Evaluator, cells, expected, timeout=20):
 
 def main(argv):
     verbose = "-v" in argv
+    problems = HARD if "--hard" in argv else PROBLEMS
     ev = Evaluator(load_registry([ROOT / "modules"]))
     totals = defaultdict(lambda: [0, 0])
     failures = []
     t0 = time.time()
-    for domain, cells, expected in PROBLEMS:
+    for domain, cells, expected in problems:
         ok, detail = run_one(ev, cells, expected)
         totals[domain][1] += 1
         totals[domain][0] += ok

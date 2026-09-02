@@ -45,6 +45,17 @@ class ModuleAPI:
         self.name = name
         self.description = description
         self.entries: list[Entry] = []
+        self.fallbacks: dict[str, list] = {}
+
+    def fallback(self, operation: str, fn):
+        """Register a backend for an operation ("integrate", "simplify", "solve", "limit", "sum").
+
+        Core functions call the backends in module order whenever SymPy gives up
+        (an unevaluated Integral, an unchanged expression, no solution). ``fn``
+        receives the same arguments as the core operation and returns a sympy
+        object or None to pass.
+        """
+        self.fallbacks.setdefault(operation, []).append(fn)
 
     def function(self, name: str, impl=None, *, signature: str = "", doc: str = "", category: str = "",
                  example: str = "", hidden: bool = False):
@@ -71,6 +82,7 @@ class LoadedModule:
     path: str
     entries: list[Entry]
     error: str | None = None
+    fallbacks: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -105,7 +117,7 @@ def _load_from_file(path: Path, fallback_name: str) -> LoadedModule:
         desc = getattr(module, "DESCRIPTION", "")
         api = ModuleAPI(name, desc)
         module.register(api)
-        return LoadedModule(name, desc, str(path), api.entries)
+        return LoadedModule(name, desc, str(path), api.entries, fallbacks=api.fallbacks)
     except Exception:
         err = traceback.format_exc(limit=3)
         return LoadedModule(fallback_name, "", str(path), [], error=err)
@@ -125,4 +137,8 @@ def load_registry(module_dirs: list[Path]) -> Registry:
             mp = sub / "module.py"
             if sub.is_dir() and mp.is_file():
                 reg.modules.append(_load_from_file(mp, sub.name))
+    from . import hooks
+
+    hooks.install({op: [fn for m in reg.modules for fn in m.fallbacks.get(op, [])]
+                   for op in {op for m in reg.modules for op in m.fallbacks}})
     return reg

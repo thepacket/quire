@@ -3,7 +3,8 @@ import sympy as sp
 
 from ...engine import units as U
 from ...engine.errors import EvalError
-from ._util import as_list, matrix, sym
+from .. import hooks
+from ._util import as_list, matrix, prune_piecewise, sym
 
 
 def _diff(f, *args):
@@ -53,9 +54,32 @@ def _quad(f, ranges):
     return val
 
 
+def _only_equalities(cond) -> bool:
+    """True when a condition is built only from equalities (a degenerate parameter case)."""
+    if isinstance(cond, sp.Eq):
+        return True
+    if isinstance(cond, (sp.And, sp.Or)):
+        return all(_only_equalities(c) for c in cond.args)
+    return False
+
+
+def generic_branch(res):
+    """Drop degenerate-parameter branches like (..., Eq(a, 0)); keep the generic result."""
+    if isinstance(res, sp.Piecewise) and res.args[-1].cond == sp.true \
+            and all(_only_equalities(c) for _, c in res.args[:-1]):
+        return res.args[-1].expr
+    return res
+
+
 def _integrate(f, *args):
     ranges = _ranges(args)
-    res = sp.integrate(f, *ranges)
+    res = generic_branch(prune_piecewise(sp.integrate(f, *ranges), hooks.context.get("bounds", {})))
+    indefinite = any(not isinstance(r, tuple) for r in ranges)
+    ugly = res.has(sp.Integral, sp.meijerg, sp.exp_polar, sp.hyper) or (indefinite and res.has(sp.floor))
+    if ugly and hooks.available("integrate"):
+        alt = hooks.run("integrate", f, ranges)
+        if alt is not None and (res.has(sp.Integral) or sp.count_ops(alt) < sp.count_ops(res)):
+            return alt
     if isinstance(res, sp.Integral) and not res.free_symbols and all(isinstance(r, tuple) for r in ranges):
         # No closed form found; a definite integral with numeric bounds still has a value.
         try:
@@ -99,7 +123,12 @@ def _limit(f, x, x0, direction=None):
         d = "+" if sp.sympify(direction) > 0 else "-"
     elif x0 in (sp.oo, -sp.oo):
         d = "+" if x0 == -sp.oo else "-"
-    return sp.limit(f, sym(x), x0, d)
+    res = sp.limit(f, sym(x), x0, d)
+    if res.has(sp.Limit):
+        alt = hooks.run("limit", f, x, x0, d)
+        if alt is not None:
+            return alt
+    return res
 
 
 def _series(f, x, x0=0, n=6):
@@ -118,6 +147,10 @@ def _with_integer_bounds(op, f, k, a, b):
         rep[k] = sp.Dummy(k.name, integer=True)
     f2, a2, b2 = (sp.sympify(e).subs(rep) for e in (f, a, b))
     res = op(f2, (rep.get(k, k), a2, b2))
+    if res.has(sp.Sum, sp.Product):
+        alt = hooks.run("sum" if op is sp.summation else "product", f, k, a, b)
+        if alt is not None:
+            return alt
     finite = b2 not in (sp.oo, -sp.oo) and a2 not in (sp.oo, -sp.oo)
     if finite and isinstance(res, sp.Piecewise):
         # A finite sum has a closed form everywhere; drop sympy's "otherwise keep the Sum" branch.

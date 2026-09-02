@@ -28,6 +28,11 @@ def register(api):
                  category=S)
     api.function("elliptic_e", sp.elliptic_e, signature="elliptic_e(m)", doc="complete elliptic integral E",
                  category=S)
+    api.function("harmonic", sp.harmonic, signature="harmonic(n)", doc="harmonic number H_n", category=S)
+    api.function("erfi", sp.erfi, signature="erfi(x)", doc="imaginary error function", category=S)
+    api.function("expand_func", sp.expand_func, signature="expand_func(expr)",
+                 doc="expand special functions (gamma, binomial, ...)", category=S)
+    api.constant("Catalan", sp.Catalan, doc="Catalan's constant", category="Constants")
     api.function("heaviside", lambda x: sp.Heaviside(x), signature="heaviside(x)", doc="unit step", category=S)
     api.function("dirac", sp.DiracDelta, signature="dirac(x)", doc="Dirac delta", category=S)
     api.function("kronecker", sp.KroneckerDelta, signature="kronecker(i, j)", doc="Kronecker delta", category=S)

@@ -42,3 +42,64 @@ def pretty_solutions(res, syms):
             return [[sp.Eq(s, v, evaluate=False) for s, v in zip(syms, t)] for t in items]
         return items
     return res
+
+
+def _bound_samples(name: str, bounds: dict):
+    """Sample values satisfying the worksheet bounds for a symbol (assume x > 1, x < 3, ...)."""
+    lo, hi = None, None
+    for op, val in bounds.get(name, []):
+        v = sp.nsimplify(val) if not isinstance(val, sp.Basic) else val
+        if op in (">", ">="):
+            lo = v if lo is None else sp.Max(lo, v)
+        elif op in ("<", "<="):
+            hi = v if hi is None else sp.Min(hi, v)
+    if lo is None and hi is None:
+        return None
+    if lo is not None and hi is not None:
+        return [lo + (hi - lo) * f for f in (sp.Rational(1, 7), sp.Rational(1, 2), sp.Rational(6, 7))]
+    if lo is not None:
+        return [lo + sp.Rational(1, 3), lo + 2, lo + 50]
+    return [hi - sp.Rational(1, 3), hi - 2, hi - 50]
+
+
+def prune_piecewise(res, bounds: dict):
+    """Decide piecewise conditions using the worksheet's numeric bounds on symbols.
+
+    A condition that is False at every sample point inside the declared region is
+    dropped; one that is True at every sample point ends the piecewise there. If no
+    bounded symbol appears, the result is returned unchanged.
+    """
+    if not isinstance(res, sp.Piecewise) or not bounds:
+        return res
+    names = {s.name for s in res.free_symbols}
+    if not names & set(bounds):
+        return res
+    samples = {}
+    for s in res.free_symbols:
+        pts = _bound_samples(s.name, bounds)
+        if pts:
+            samples[s] = pts
+    if not samples:
+        return res
+    kept = []
+    for expr, cond in res.args:
+        if cond == sp.true:
+            kept.append((expr, cond))
+            break
+        verdicts = set()
+        for i in range(3):
+            point = {s: pts[i] for s, pts in samples.items()}
+            try:
+                v = cond.subs(point)
+                verdicts.add(bool(v) if v in (sp.true, sp.false) else None)
+            except (TypeError, ValueError):
+                verdicts.add(None)
+        if verdicts == {False}:
+            continue
+        if verdicts == {True}:
+            kept.append((expr, sp.true))
+            break
+        kept.append((expr, cond))
+    if len(kept) == 1:
+        return kept[0][0]
+    return sp.Piecewise(*kept) if kept else res
