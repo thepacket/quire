@@ -79,10 +79,27 @@ inserts into the current cell. **Examples** opens complete worksheets.
 
 ### Plot cells
 
-Type one or more expressions separated by commas (`sin(x), cos(x)` or `y(t)`), a range
-(`0 s` to `5 tau` is fine, units and definitions allowed) and optionally the variable;
-it is inferred when there is only one unknown. All series must share units. Axes are
-labelled with the SI unit.
+Pick a kind, then fill in the fields:
+
+| kind | fields |
+|---|---|
+| `y = f(x)` | one or more expressions separated by commas (`sin(x), cos(x)` or `y(t)`), a range, optional variable |
+| parametric | `x(t)`, `y(t)`, parameter range |
+| polar | `r(θ)`, angle range |
+| scatter | x data and y data, any expressions that give lists |
+| slope field | `dy/dx = f(x, y)`, x and y ranges, density |
+| implicit | an equation `F(x, y) == c`, x and y ranges |
+
+Ranges accept units and definitions (`0 s` to `5 tau`); the variable is inferred when
+there is only one unknown; all series must share units and axes are labelled with the SI
+unit. Function plots are sampled adaptively and broken at discontinuities, so `tan x` has
+gaps rather than walls and the visible range ignores the spikes. Hover for values, scroll
+to zoom, drag to pan, double-click to reset, click a legend entry to hide a series, tick
+`log x` / `log y` for logarithmic axes, and `SVG` downloads the picture.
+
+`a = slider(1, 0, 5, 0.1)` defines a value with a slider under the cell; dragging it
+re-evaluates everything below, plots included. The "Interactive plots" example shows
+each of these.
 
 ## Modules
 
@@ -220,5 +237,6 @@ carries `defines` and `uses`, shown under the cell.
   which is the intended worksheet reading order.
 - A `->` conversion on a function definition is applied when the function is called
   with values. Until then the body is shown in the units it was written in.
-- Plot cells draw curves of one variable only. No parametric or 3D plots yet.
+- Plot cells are 2D: functions, parametric, polar, scatter, slope fields and implicit
+  curves. No contour, heatmap or 3D plots yet.
 - File dialogs are minimal (a name, not a file picker); the on-disk format is plain JSON.

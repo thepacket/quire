@@ -1,0 +1,27 @@
+{
+ "quire": 1,
+ "title": "Interactive plots",
+ "cells": [
+  {"type": "text", "source": "# Plots you can play with\nDrag the sliders: every number and curve that depends on them follows. Hover a curve for values, scroll to zoom, drag to pan, double-click to reset, click a legend entry to hide it."},
+  {"type": "math", "source": "a = slider(1, 0, 3, 0.05)\nomega = slider(2, 0.5, 6, 0.1)"},
+  {"type": "math", "source": "f(x) = a sin(omega x) exp(-x/4)"},
+  {"type": "plot", "kind": "function", "exprs": "f(x), a exp(-x/4), -a exp(-x/4)", "xmin": "0", "xmax": "10", "var": "x"},
+  {"type": "text", "source": "## Discontinuities\nPoles are drawn as gaps, not vertical walls, and the visible range ignores the spikes."},
+  {"type": "plot", "kind": "function", "exprs": "tan(x), 1/(x - 1)", "xmin": "-5", "xmax": "5", "var": "x"},
+  {"type": "text", "source": "## Parametric and polar curves\nA Lissajous figure and a limaçon; both are drawn with equal scales on the axes."},
+  {"type": "math", "source": "k = slider(3, 1, 7, 1)"},
+  {"type": "plot", "kind": "parametric", "exprs": "cos(t)", "expr2": "sin(k t)", "xmin": "0", "xmax": "2 pi", "var": "t"},
+  {"type": "math", "source": "b = slider(1, 0, 2, 0.05)"},
+  {"type": "plot", "kind": "polar", "exprs": "1 + b cos(theta)", "xmin": "0", "xmax": "2 pi", "var": "theta"},
+  {"type": "text", "source": "## Data\nMeasurements from the stats example, with the least-squares line on top of them."},
+  {"type": "math", "source": "xs = [0, 1, 2, 3, 4, 5]\nys = [1.1, 2.9, 5.2, 6.8, 9.1, 10.9]\nfit = linfit(xs, ys)"},
+  {"type": "plot", "kind": "scatter", "exprs": "xs", "expr2": "ys"},
+  {"type": "plot", "kind": "function", "exprs": "fit[0] x + fit[1]", "xmin": "0", "xmax": "5", "var": "x"},
+  {"type": "text", "source": "## Slope fields and implicit curves\nThe direction field of $y' = y - x$, and the level set $x^2 - y^2 = 1$ traced with marching squares."},
+  {"type": "plot", "kind": "slope", "exprs": "y - x", "xmin": "-3", "xmax": "3", "ymin": "-3", "ymax": "3", "samples": "18"},
+  {"type": "math", "source": "c = slider(1, -2, 2, 0.1)"},
+  {"type": "plot", "kind": "implicit", "exprs": "x^2 - y^2 == c", "xmin": "-3", "xmax": "3", "ymin": "-3", "ymax": "3", "samples": "150"},
+  {"type": "text", "source": "## Log axes\nThe same power law on linear and logarithmic axes."},
+  {"type": "plot", "kind": "function", "exprs": "x^2, x^3", "xmin": "0.1", "xmax": "100", "var": "x", "logx": true, "logy": true}
+ ]
+}

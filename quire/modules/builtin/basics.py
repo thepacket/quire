@@ -34,7 +34,22 @@ def _polar(z):
     return [sp.Abs(z), sp.arg(z)]
 
 
+def _slider(value, lo, hi, step=None):
+    """The current value of a slider; the UI draws the control under the cell."""
+    from .. import hooks
+
+    v, lo, hi = sp.sympify(value), sp.sympify(lo), sp.sympify(hi)
+    if any(not x.is_number for x in (v, lo, hi)):
+        raise ValueError("slider(value, min, max) needs numbers.")
+    hooks.context["slider"] = {"value": float(v), "min": float(lo), "max": float(hi),
+                               "step": float(step) if step is not None else None}
+    return v
+
+
 def register(api):
+    api.function("slider", _slider, signature="slider(value, min, max, step)",
+                 doc="a value you can drag; everything that uses it updates", category="Interactive",
+                 example="a = slider(1, 0, 5)")
     C = "Constants"
     api.constant("pi", sp.pi, doc="π", category=C, example="2 pi")
     api.constant("e", sp.E, doc="Euler's number", category=C, example="e^x")

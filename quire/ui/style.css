@@ -107,3 +107,15 @@ svg.plot { width: 100%; max-width: 700px; height: auto; display: block; backgrou
 .modal-body input.name { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; }
 
 kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: #fafaf8; }
+
+.plot-form select.kind { font: inherit; font-size: 12.5px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; background: var(--paper); }
+.plot-form .chk { font-size: 12px; display: inline-flex; align-items: center; gap: 3px; }
+.plot-form button.export { font-size: 11px; padding: 2px 7px; }
+.plot-wrap { position: relative; }
+.tip { position: absolute; background: rgba(255,255,255,.96); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 12px; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.08); white-space: nowrap; }
+.tip .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.legend .lg { cursor: pointer; } .legend .lg.off { opacity: .35; text-decoration: line-through; }
+svg.plot { cursor: crosshair; }
+.slider-row { display: flex; align-items: center; gap: 10px; padding: 2px 10px 6px; }
+.slider-row input[type=range] { width: 260px; accent-color: var(--accent); }
+.slider-val { font-family: var(--mono); font-size: 13px; color: var(--muted); min-width: 60px; }

@@ -220,11 +220,12 @@ class Evaluator:
         outputs, defines, uses = [], [], set()
         error = warning = None
         self.last_values = []  # raw values of each output line (used by the benchmark)
-        for line in source.split("\n"):
+        for line_index, line in enumerate(source.split("\n")):
             if not line.strip():
                 continue
             try:
                 hooks.context["notes"] = []
+                hooks.context.pop("slider", None)
                 st = classify(line)
                 if st.kind == "assume":
                     outputs.append(self.assume(st, env))
@@ -253,6 +254,8 @@ class Evaluator:
                 out = self.render(st, value)
                 if hooks.context.get("notes"):
                     out["notes"] = list(hooks.context["notes"])
+                if hooks.context.get("slider") and st.kind == "definition":
+                    out["slider"] = dict(hooks.context["slider"], line=line_index)
                 outputs.append(out)
             except QuireError as exc:
                 error = str(exc)
