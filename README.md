@@ -1,5 +1,7 @@
 # Quire
 
+![Quire showing a phase portrait of the van der Pol oscillator, a slider for μ, the notation palette and the reference panel](docs/hero.png)
+
 A reactive, unit-aware math worksheet. You write math, not code:
 
 ```
