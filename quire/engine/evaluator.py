@@ -14,12 +14,34 @@ from sympy.logic.boolalg import BooleanAtom
 
 from . import units as U
 from .errors import QuireError
-from .parser import GREEK_NAMES, SYM_ALIAS, UNIT_ALIAS, alias_units, classify, identifiers, parse
+from .parser import GREEK_NAMES, SYM_ALIAS, UNIT_ALIAS, alias_units, called_names, classify, identifiers, parse
 from .steps import Steps
 from .notation import normalize, uses_notation
 
 INTERNAL_NAMES = {"Symbol", "Integer", "Float", "Rational", "Function", "Lambda"}
 IMPORT_RE = re.compile(r"^\s*import\s+(.+?)\s*$")
+MEASURED_KEY = "$measured"  # env slot: name -> (symbol, nominal value, standard uncertainty) for "x = 12.3 ± 0.2 m"
+DIMS_KEY = "$dims"          # env slot: name -> unit for "assume L length"
+NUMBER = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+MEASURED_RE = re.compile(rf"^\s*(?P<a>{NUMBER})\s*(?P<ua>[^±]*?)\s*(?:±|\+-|\+/-)\s*(?P<b>{NUMBER[5:]})\s*(?P<ub>.*?)\s*$")
+
+
+def _same(a, b) -> bool:
+    """Structural equality for cached environment values (identity first, then sympy equality)."""
+    if a is b:
+        return True
+    if isinstance(a, DefinedFunction) and isinstance(b, DefinedFunction):
+        return a.params == b.params and a.target_text == b.target_text and _same(a.expr, b.expr)
+    if isinstance(a, sp.Basic) and isinstance(b, sp.Basic):
+        try:
+            return bool(a == b)
+        except Exception:  # noqa: BLE001
+            return False
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    if isinstance(a, (int, float, complex, bool, str)) and isinstance(b, (int, float, complex, bool, str)):
+        return a == b
+    return False
 
 
 def placeholders(text: str) -> list[str]:
@@ -51,6 +73,7 @@ def placeholders(text: str) -> list[str]:
 ASSUME_KEY = "$assume"  # env slot for symbol assumptions; '$' cannot appear in a name
 BOUNDS_KEY = "$bounds"  # env slot for numeric bounds from 'assume s > 1' (used by backends)
 DIGITS_KEY = "$digits"  # env slot for the display precision set by 'digits n' 
+SPECIAL_COPY = (ASSUME_KEY, BOUNDS_KEY, DIGITS_KEY, MEASURED_KEY, DIMS_KEY, "$sliders")
 
 _ASSUMPTION_LATEX = {
     "positive": "{n} > 0", "negative": "{n} < 0", "nonnegative": r"{n} \geq 0", "nonpositive": r"{n} \leq 0",
@@ -247,27 +270,217 @@ class Evaluator:
             ns[b] = sp.Symbol(b, **assumed.get(b, {}))
         for g in GREEK_NAMES:  # 'beta' as a value is the variable beta (a user definition still wins)
             ns[SYM_ALIAS + g] = env[g] if g in env else sp.Symbol(g, **assumed.get(g, {}))
+        measured = env.get(MEASURED_KEY) or {}
+        if measured:
+            ns["nominal"] = lambda e: sp.sympify(e).subs(self.nominals(env))
+            ns["uncertainty"] = lambda e: (self.propagate(sp.sympify(e), env) or (None, sp.S.Zero))[1]
         return ns
+
+    # -- measured values: x = 12.3 ± 0.2 m ---------------------------------
+    def nominals(self, env: dict) -> dict:
+        return {sym: sp.Float(v) for sym, v, _ in (env.get(MEASURED_KEY) or {}).values()}
+
+    def dim_symbols(self, env: dict) -> set:
+        """Symbols that stand for a declared dimension or a measured value (their unit travels beside them)."""
+        out = {sym for sym, _, _ in (env.get(MEASURED_KEY) or {}).values()}
+        out |= {sym for sym, _ in (env.get(DIMS_KEY) or {}).values()}
+        return out
+
+    def propagate(self, expr, env: dict):
+        """(nominal value, standard uncertainty) by linear propagation, or None if expr has other symbols."""
+        measured = env.get(MEASURED_KEY) or {}
+        if not measured or not isinstance(expr, sp.Expr):
+            return None
+        syms = {sym: (v, sg) for sym, v, sg in measured.values() if sym in expr.free_symbols}
+        if not syms or (expr.free_symbols - set(syms)):
+            return None
+        nominal = {sym: sp.Float(v) for sym, (v, _) in syms.items()}
+        value = expr.subs(nominal)
+        var = sp.S.Zero
+        for sym, (_, sg) in syms.items():
+            var += (sp.diff(expr, sym).subs(nominal) * sg) ** 2
+        num, unit = U.split_units(sp.expand(var))
+        try:
+            sigma = sp.sqrt(sp.Abs(num)) * sp.sqrt(unit)
+        except Exception:  # noqa: BLE001
+            return None
+        return value, sigma
+
+    def measured_definition(self, st, ns: dict, env: dict):
+        """Bind st.name to a symbol whose unit travels beside it; returns the value or None if not measured."""
+        m = MEASURED_RE.match(st.body)
+        if not m or st.kind != "definition":
+            return None
+        a, ua, b, ub = m.group("a"), m.group("ua").strip(), m.group("b"), m.group("ub").strip()
+        val = parse(f"{a} {ua}" if ua else a, ns, self.unit_names)
+        sig = parse(f"{b} {ub}" if ub else b, ns, self.unit_names)
+        if not isinstance(val, sp.Expr) or not isinstance(sig, sp.Expr) or val.free_symbols or sig.free_symbols:
+            raise QuireError("A measured value is 'number ± number', with units after either, e.g. 12.3 ± 0.2 m.")
+        if U.has_units(sig) and not U.has_units(val):
+            val = val * U.split_units(sig)[1]
+        num, unit = U.split_units(val)
+        if unit != 1:
+            sig = U.convert(sig, unit) if U.has_units(sig) else sig * unit
+            sig_num = float(U.strip_units(U.split_units(sig)[0])[0])
+        else:
+            if U.has_units(sig):
+                raise QuireError("The uncertainty has units but the value has none.")
+            sig_num = float(sig)
+        sym = sp.Symbol(st.name, real=True)
+        env.setdefault(MEASURED_KEY, {})[st.name] = (sym, float(num), abs(sig_num))
+        return sym * unit
+
+    def render_measured(self, st, value, env: dict, digits=None):
+        """Output for a value that depends on measured quantities: nominal ± uncertainty."""
+        pv = self.propagate(value, env)
+        if pv is None:
+            return None
+        nominal, sigma = pv
+        digits = digits or self.digits
+        vn, vu = U.split_units(nominal)
+        sn, su = U.split_units(sigma)
+        if not (vn.is_number and sn.is_number):
+            return None
+        if vu != su:
+            try:
+                sn = U.strip_units(U.convert(sigma, vu))[0] if vu != 1 else sn
+            except Exception:  # noqa: BLE001
+                return None
+        lv, pv_ = fmt_number(vn, digits)
+        ls, ps = fmt_number(sn, 2)
+        unit_l = (" \\, " + pretty_units(sp.latex(vu))) if vu != 1 else ""
+        unit_p = (" " + to_plain(vu)) if vu != 1 else ""
+        out = {"kind": st.kind, "latex": f"{lv} \\pm {ls}{unit_l}", "plain": f"{pv_} ± {ps}{unit_p}",
+               "measured": {"value": float(vn), "sigma": float(sn), "unit": to_plain(vu) if vu != 1 else ""}}
+        if st.kind in ("definition", "function"):
+            out["name"] = st.name
+            out["head"] = sp.latex(sp.Symbol(st.name))
+        names = sorted(str(s) for s in value.free_symbols)
+        if not (st.kind == "definition" and names == [st.name]):
+            out["notes"] = [f"uncertainty by linear propagation from {', '.join(names)}"]
+        return out
 
     def parse_unit(self, text: str):
         return parse(text, dict(self.units_namespace))
 
     # -- document -------------------------------------------------------
-    def evaluate(self, cells: list[dict]) -> list[dict]:
+    def evaluate(self, cells: list[dict], cache: dict | None = None) -> list[dict]:
+        return list(self.iter_evaluate(cells, cache))
+
+    def iter_evaluate(self, cells: list[dict], cache: dict | None = None):
+        """Yield one result per cell, top to bottom.
+
+        With a ``cache`` (kept between evaluations by the worker), a cell whose text and
+        inputs are unchanged is not re-run: its result is returned again and the changes it
+        made to the environment are replayed. The key of a cell is its text plus the value
+        of every name it mentions (or the fact that the name is undefined) plus the
+        settings in force (digits, assumptions, measured values), so a change anywhere
+        above that matters to the cell invalidates it. Each result carries the time it took
+        ("ms") and whether it came from the cache ("cached").
+        """
+        import time
+
         from .plotting import sample_plot
 
         env: dict = {}
-        results = []
+        ids = set()
         for cell in cells:
             kind = cell.get("type", "math")
             cid = cell.get("id")
+            ids.add(cid)
+            key = self._cell_key(cell, env) if cache is not None else None
+            entry = cache.get(cid) if key is not None else None
+            if entry is not None and self._key_equal(entry["key"], key):
+                self._replay(env, entry["delta"])
+                yield dict(entry["result"], cached=True, ms=0)
+                continue
+            before = dict(env)
+            trace_len = len(env.get("$trace", []))
+            t0 = time.perf_counter()
             if kind == "text":
-                results.append({"id": cid, **self.evaluate_text(cell.get("source", ""), env)})
+                res = {"id": cid, **self.evaluate_text(cell.get("source", ""), env)}
             elif kind == "plot":
-                results.append({"id": cid, **sample_plot(cell, env, self)})
+                res = {"id": cid, **sample_plot(cell, env, self)}
             else:
-                results.append({"id": cid, **self.evaluate_math(cell.get("source", ""), env)})
-        return results
+                res = {"id": cid, **self.evaluate_math(cell.get("source", ""), env)}
+            res["ms"] = round((time.perf_counter() - t0) * 1000, 1)
+            if key is not None:
+                cache[cid] = {"key": key, "result": dict(res), "delta": self._delta(before, env, trace_len)}
+            elif cache is not None:
+                cache.pop(cid, None)
+            yield res
+        if cache is not None:
+            for stale in [k for k in cache if k not in ids]:
+                del cache[stale]
+
+    def _cell_key(self, cell: dict, env: dict):
+        """(static part, [(name, value or None)]) or None when the cell must always run."""
+        kind = cell.get("type", "math")
+        if kind == "text":
+            source = cell.get("source", "")
+            if "{{" not in source:
+                return (("text", source), [])
+            texts = placeholders(source)
+            static = ("text", source)
+        elif kind == "plot":
+            fields = ("kind", "exprs", "expr2", "expr3", "var", "xmin", "xmax", "ymin", "ymax", "samples", "annot")
+            static = ("plot",) + tuple(str(cell.get(f) or "") for f in fields)
+            texts = [str(cell.get(f) or "") for f in ("exprs", "expr2", "expr3", "xmin", "xmax", "ymin", "ymax", "annot")]
+        else:
+            source = cell.get("source", "")
+            if any(IMPORT_RE.match(ln) for ln in source.split("\n")):
+                return None
+            static = ("math", source)
+            texts = [source]
+        names = set()
+        for t in texts:
+            try:
+                names |= identifiers(t) | set(called_names(t))
+            except Exception:  # noqa: BLE001 - unparsable text: still keyed on its source
+                pass
+        values = [(n, env.get(n)) for n in sorted(names)]
+        context = (env.get(DIGITS_KEY), repr(env.get(ASSUME_KEY)), repr(env.get(BOUNDS_KEY)),
+                   repr({k: v[1:] for k, v in env.get(MEASURED_KEY, {}).items()}), repr(env.get(DIMS_KEY)),
+                   self._data_stamp())
+        return (static + context, values)
+
+    @staticmethod
+    def _key_equal(a, b) -> bool:
+        if a[0] != b[0] or len(a[1]) != len(b[1]):
+            return False
+        return all(n1 == n2 and _same(v1, v2) for (n1, v1), (n2, v2) in zip(a[1], b[1]))
+
+    @staticmethod
+    def _data_stamp():
+        """Change marker for uploaded data files (read_csv and friends read them from disk)."""
+        import os
+
+        d = os.environ.get("QUIRE_WORKSHEETS")
+        try:
+            return os.stat(os.path.join(d, "data")).st_mtime_ns if d else None
+        except OSError:
+            return None
+
+    @staticmethod
+    def _delta(before: dict, env: dict, trace_len: int) -> dict:
+        import copy
+
+        delta = {"set": {k: v for k, v in env.items() if not k.startswith("$") and (k not in before or before[k] is not v)},
+                 "special": {}, "trace": list(env.get("$trace", [])[trace_len:])}
+        for k in SPECIAL_COPY:
+            if k in env and (k not in before or before[k] != env[k] or isinstance(env[k], dict)):
+                delta["special"][k] = copy.deepcopy(env[k]) if k != MEASURED_KEY else dict(env[k])
+        return delta
+
+    @staticmethod
+    def _replay(env: dict, delta: dict) -> None:
+        import copy
+
+        env.update(delta["set"])
+        for k, v in delta["special"].items():
+            env[k] = copy.deepcopy(v) if k != MEASURED_KEY else dict(v)
+        if delta["trace"]:
+            env.setdefault("$trace", []).extend(delta["trace"])
 
     # -- text cells: {{expr}} placeholders --------------------------------
     def evaluate_text(self, source: str, env: dict) -> dict:
@@ -345,7 +558,9 @@ class Evaluator:
                     continue
                 st = classify(line)
                 if st.kind == "assume":
-                    outputs.append(self.assume(st, env))
+                    out = self.assume(st, env)
+                    defines.extend(n for n in out.pop("$defines", []) if n not in defines)
+                    outputs.append(out)
                     continue
                 if st.kind == "digits":
                     env[DIGITS_KEY] = int(st.body)
@@ -354,8 +569,11 @@ class Evaluator:
                 ns = self.namespace(env, st.params)
                 # names used, ignoring unit phrases such as "3 m" even when m is also defined
                 uses |= (identifiers(alias_units(st.body, self.unit_names)) - set(st.params)) & set(env) - {ASSUME_KEY, BOUNDS_KEY}
-                value = parse(st.body, ns, self.unit_names)
-                if st.kind == "function":
+                measured = self.measured_definition(st, ns, env)
+                value = measured if measured is not None else parse(st.body, ns, self.unit_names)
+                if measured is not None:
+                    value = self.finalize(value, st.convert_to, env=env)
+                elif st.kind == "function":
                     # The body is checked and converted when called: parameters may carry units.
                     if not isinstance(value, sp.Expr):
                         raise QuireError("A function body must be a single expression.")
@@ -363,9 +581,9 @@ class Evaluator:
                     value = DefinedFunction(st.name, st.params, value, target, st.convert_to,
                                             symbols=[ns[p] for p in st.params])
                 elif isinstance(value, Steps):
-                    value.result = self.finalize(value.result, st.convert_to)
+                    value.result = self.finalize(value.result, st.convert_to, env=env)
                 else:
-                    value = self.finalize(value, st.convert_to)
+                    value = self.finalize(value, st.convert_to, env=env)
                 if st.kind in ("definition", "function") and st.name in self.unit_names and len(st.name) > 1:
                     warning = (f"'{st.name}' now means your definition. Directly after a number it still "
                                f"means the unit ({U.UNIT_TABLE[st.name][1]}), as in '3 {st.name}'; "
@@ -374,13 +592,14 @@ class Evaluator:
                     env[st.name] = value.result if isinstance(value, Steps) else value
                     defines.append(st.name)
                 self.last_values.append(value)
-                out = self.render(st, value, env.get(DIGITS_KEY))
+                out = (self.render_measured(st, value, env, env.get(DIGITS_KEY)) if env.get(MEASURED_KEY) and isinstance(value, sp.Expr) else None) \
+                    or self.render(st, value, env.get(DIGITS_KEY))
                 if uses_notation(st.source):
                     reading = self.reading(st, ns)
                     if reading:
                         out["reading"] = reading
                 if hooks.context.get("notes"):
-                    out["notes"] = list(hooks.context["notes"])
+                    out["notes"] = out.get("notes", []) + list(hooks.context["notes"])
                 if hooks.context.get("slider") and st.kind == "definition":
                     out["slider"] = dict(hooks.context["slider"], line=line_index, name=st.name)
                     env.setdefault("$sliders", {})[st.name] = hooks.context["slider"]["value"]
@@ -425,9 +644,16 @@ class Evaluator:
     def assume(self, st, env: dict) -> dict:
         assumed = env.setdefault(ASSUME_KEY, {})
         bounds = env.setdefault(BOUNDS_KEY, {})
+        dims = {}
         for n in st.names:
             spec = dict(st.assumptions[n])
             bound = spec.pop("$bound", None)
+            dim = spec.pop("$dim", None)
+            if dim is not None:
+                unit = U.DIMENSION_UNITS.get(dim)
+                if unit is None:
+                    unit = self.parse_unit(dim)
+                dims[n] = (dim, unit)
             if bound is not None:
                 bounds.setdefault(n, []).append(bound)
             merged = {**assumed.get(n, {}), **spec}
@@ -437,8 +663,18 @@ class Evaluator:
                 raise QuireError(f"Assumptions on '{n}' contradict each other: {exc}") from None
             assumed[n] = merged
         parts, plain = [], []
+        for n, (dim, unit) in dims.items():
+            sym = sp.Symbol(n, **assumed.get(n, {}))
+            env[n] = sym * unit
+            env.setdefault(DIMS_KEY, {})[n] = (sym, unit)
         for n in st.names:
             head = sp.latex(sp.Symbol(n))
+            if n in dims:
+                dim, unit = dims[n]
+                label = U.unit_label(unit) if unit != 1 else "1"
+                parts.append(f"{head} : \\text{{{dim}}}" + (f"\\ [{pretty_units(sp.latex(unit))}]" if unit != 1 and dim != label else ""))
+                plain.append(f"{n} {dim}")
+                continue
             bound = st.assumptions[n].get("$bound")
             if bound is not None:
                 op = {">=": r"\geq", "<=": r"\leq", "!=": r"\neq"}.get(bound[0], bound[0])
@@ -448,16 +684,19 @@ class Evaluator:
             for key in st.assumptions[n]:
                 parts.append(_ASSUMPTION_LATEX.get(key, "{n}").format(n=head))
             plain.append(f"{n} {' '.join(st.assumptions[n])}")
-        return {"kind": "assume", "latex": ",\\ ".join(parts), "plain": "; ".join(plain)}
+        out = {"kind": "assume", "latex": ",\\ ".join(parts), "plain": "; ".join(plain)}
+        if dims:
+            out["$defines"] = list(dims)
+        return out
 
-    def finalize(self, value, convert_to: str | None, check: bool = True):
+    def finalize(self, value, convert_to: str | None, check: bool = True, env: dict | None = None):
         if isinstance(value, (list, tuple)):
-            return type(value)(self.finalize(v, convert_to, check) for v in value)
+            return type(value)(self.finalize(v, convert_to, check, env) for v in value)
         if isinstance(value, (int, float, complex, bool)):
             value = sp.sympify(value)
         if isinstance(value, sp.Expr):
             if check:
-                U.check_dimensions(value)
+                U.check_dimensions(value, self.dim_symbols(env) if env else ())
             if convert_to:
                 target = self.parse_unit(convert_to)
                 value = U.convert(value, target)
@@ -512,4 +751,9 @@ class Evaluator:
         approx = approx_of(shown.expr if isinstance(shown, (sp.Lambda, DefinedFunction)) else shown, digits or self.digits)
         if approx:
             out["approx"], out["approx_plain"] = approx
+        if isinstance(shown, sp.Expr) and not shown.free_symbols and not U.has_units(shown) and shown.is_real:
+            try:
+                out["num"] = float(shown)  # lets the browser preview cheap arithmetic before the server answers
+            except (TypeError, ValueError):
+                pass
         return out

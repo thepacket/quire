@@ -158,16 +158,32 @@ def dimension_of(expr):
     return SI.get_dimensional_expr(expr)
 
 
-def check_dimensions(expr) -> None:
+# Dimensions a symbol can be declared with ("assume L length"): name -> a representative SI unit.
+DIMENSION_UNITS = {
+    "length": u.meter, "mass": u.kilogram, "time": u.second, "current": u.ampere, "temperature": u.kelvin,
+    "amount": u.mole, "luminosity": u.candela, "area": u.meter ** 2, "volume": u.meter ** 3,
+    "velocity": u.meter / u.second, "speed": u.meter / u.second, "acceleration": u.meter / u.second ** 2,
+    "force": u.newton, "energy": u.joule, "work": u.joule, "power": u.watt, "pressure": u.pascal,
+    "stress": u.pascal, "frequency": u.hertz, "charge": u.coulomb, "voltage": u.volt, "resistance": u.ohm,
+    "capacitance": u.farad, "inductance": u.henry, "density": u.kilogram / u.meter ** 3,
+    "momentum": u.kilogram * u.meter / u.second, "torque": u.newton * u.meter, "angle": sp.S.One,
+    "dimensionless": sp.S.One,
+}
+
+
+def check_dimensions(expr, symbols=()) -> None:
     """Raise UnitError when a sum mixes incompatible dimensions.
 
     Only fully bound expressions are checked: a free symbol may receive a
     unit-carrying value later (function parameters, plot variables), so
-    ``x m + 3 s`` is judged when x is known, not before. Every Add inside the
-    expression is checked term by term in SI base units, so Hz*s and km/m cancel
-    and functions such as Abs or log around a sum do not confuse the check.
+    ``x m + 3 s`` is judged when x is known, not before. Symbols listed in
+    ``symbols`` are dimensionless placeholders whose unit travels beside them
+    (declared dimensions, measured values), so they do not block the check.
+    Every Add inside the expression is checked term by term in SI base units,
+    so Hz*s and km/m cancel and functions such as Abs or log around a sum do
+    not confuse the check.
     """
-    if not has_units(expr) or expr.free_symbols:
+    if not has_units(expr) or (expr.free_symbols - set(symbols)):
         return
     base = to_base(expr)
     dimsys = SI.get_dimension_system()

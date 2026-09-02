@@ -235,3 +235,7 @@ body.shared .plot-form input, body.shared .annot-wrap input { background: #fbfaf
   .legend .lg { padding: 4px 0; }
   .ref-item { padding: 9px 12px; }
 }
+
+.meta .cost { color: #9ca3af; }
+.meta .cost.slow { color: var(--warn); font-weight: 600; }
+.out-line.preview { color: var(--muted); font-family: var(--mono); font-size: 14px; }

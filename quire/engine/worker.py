@@ -35,6 +35,7 @@ def _loop(conn, module_dirs, doc_dirs=()):
 
     registry = load_registry([Path(d) for d in module_dirs])
     ev = Evaluator(registry, loader=make_loader([Path(d) for d in doc_dirs]) if doc_dirs else None)
+    cache: dict = {}  # per-cell results, replayed when a cell and everything it depends on are unchanged
     while True:
         try:
             msg = conn.recv()
@@ -46,18 +47,7 @@ def _loop(conn, module_dirs, doc_dirs=()):
         elif kind == "eval":
             cells = msg[1]
             # Stream results one cell at a time so a timeout can name the culprit.
-            from .plotting import sample_plot
-
-            env = {}
-            for cell in cells:
-                ctype = cell.get("type", "math")
-                cid = cell.get("id")
-                if ctype == "text":
-                    res = {"id": cid, **ev.evaluate_text(cell.get("source", ""), env)}
-                elif ctype == "plot":
-                    res = {"id": cid, **sample_plot(cell, env, ev)}
-                else:
-                    res = {"id": cid, **ev.evaluate_math(cell.get("source", ""), env)}
+            for res in ev.iter_evaluate(cells, cache):
                 conn.send(("cell", res))
             conn.send(("done",))
         elif kind == "quit":

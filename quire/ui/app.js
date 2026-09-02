@@ -21,6 +21,7 @@ const state = {
   evalTimer: null,
   evalSeq: 0,
   share: null,   // token when viewing a read-only share link
+  nums: new Map(), // name -> plain numeric value, for the arithmetic preview while the server answers
 };
 
 // ---------- KaTeX helpers ----------
@@ -213,11 +214,53 @@ function buildMath(cell, body) {
   ta.value = cell.source || "";
   if (state.share) ta.readOnly = true;
   body.parentElement.dataset.src = cell.source || "";  // shown instead of the textarea when printing
-  ta.addEventListener("input", () => { cell.source = ta.value; body.parentElement.dataset.src = ta.value; autogrow(ta); touch(); acShow(ta); });
+  ta.addEventListener("input", () => { cell.source = ta.value; body.parentElement.dataset.src = ta.value; autogrow(ta); touch(); acShow(ta); previewMath(cell, body); });
   ta.addEventListener("keydown", ev => { if (acKey(ev)) return; keyNav(cell, ta, ev); });
   ta.addEventListener("focus", () => { state.activeInput = ta; });
   ta.addEventListener("blur", () => setTimeout(acClose, 120));
   requestAnimationFrame(() => autogrow(ta));
+}
+
+// A tiny arithmetic evaluator (numbers, + - * / ^, parentheses, implicit products, names with known plain
+// numeric values) so a simple cell shows "≈ value" at once; the server's exact result replaces it.
+function quickArith(src, names) {
+  const toks = src.match(/\d+\.?\d*(?:[eE][-+]?\d+)?|[A-Za-z_]\w*|[-+*/^()]/g) || [];
+  if (toks.join("").replace(/\s+/g, "") !== src.replace(/\s+/g, "")) return null;
+  let i = 0;
+  const peek = () => toks[i], next = () => toks[i++];
+  const atom = () => {
+    const t = next();
+    if (t === undefined) throw 0;
+    if (t === "(") { const v = expr(); if (next() !== ")") throw 0; return v; }
+    if (t === "-") return -atom();
+    if (t === "+") return atom();
+    if (/^[A-Za-z_]/.test(t)) { if (t === "pi") return Math.PI; if (t === "e") return Math.E; if (!names.has(t)) throw 0; return names.get(t); }
+    return parseFloat(t);
+  };
+  const power = () => { let b = atom(); if (peek() === "^") { next(); return Math.pow(b, power()); } return b; };
+  const term = () => {
+    let v = power();
+    for (;;) {
+      const t = peek();
+      if (t === "*") { next(); v *= power(); }
+      else if (t === "/") { next(); v /= power(); }
+      else if (t !== undefined && t !== ")" && t !== "+" && t !== "-" && t !== "^") v *= power(); // juxtaposition
+      else return v;
+    }
+  };
+  const expr = () => { let v = term(); for (;;) { const t = peek(); if (t === "+") { next(); v += term(); } else if (t === "-") { next(); v -= term(); } else return v; } };
+  try { const v = expr(); if (i !== toks.length || !Number.isFinite(v)) return null; return v; } catch (e) { return null; }
+}
+function previewMath(cell, body) {
+  const out = $(".out", body);
+  const lines = cell.source.split("\n").filter(l => l.trim());
+  if (lines.length !== 1 || out.querySelector("input.slider")) return;
+  const m = /^\s*(?:([A-Za-z_]\w*)\s*=(?!=))?\s*([^=]+?)\s*$/.exec(lines[0]);
+  if (!m || /[a-zA-Z_]\w*\s*\(/.test(m[2]) || /->|\[|!/.test(m[2])) return;
+  const v = quickArith(m[2], state.nums);
+  if (v === null) return;
+  if (!out.querySelector(".preview")) out.innerHTML = "";
+  out.innerHTML = `<div class="out-line preview" title="Quick estimate; the exact result is on its way">${m[1] ? esc(m[1]) + " ≈ " : "≈ "}${fmtVal(v)}</div>`;
 }
 
 function buildText(cell, body) {
@@ -409,15 +452,18 @@ async function evaluateNow() {
     status(`<span class="bad">Cannot reach the Quire server. Is it still running?</span>`); return;
   }
   if (seq !== state.evalSeq) return; // a newer evaluation is in flight
-  let errors = 0;
+  let errors = 0, cached = 0, total = 0;
   for (const res of data.results || []) {
     state.results.set(res.id, res);
     if (res.ok === false) errors++;
+    if (res.cached) cached++;
+    total++;
     renderResult(res);
   }
   const mods = state.catalog ? ` · ${state.catalog.modules.length} modules` : "";
-  status(errors ? `<span class="bad">${errors} cell${errors > 1 ? "s" : ""} with errors</span> · ${data.ms} ms${mods}`
-                : `✓ evaluated in ${data.ms} ms${mods}`);
+  const work = cached ? ` · ${total - cached} of ${total} cells re-evaluated` : "";
+  status(errors ? `<span class="bad">${errors} cell${errors > 1 ? "s" : ""} with errors</span> · ${data.ms} ms${work}${mods}`
+                : `✓ evaluated in ${data.ms} ms${work}${mods}`);
 }
 function status(html) { $("#status").innerHTML = html; }
 
@@ -448,7 +494,10 @@ function renderResult(res) {
     const parts = [];
     if (res.defines && res.defines.length) parts.push(`defines <b>${esc(res.defines.join(", "))}</b>`);
     if (res.uses && res.uses.length) parts.push(`uses <b>${esc(res.uses.join(", "))}</b>`);
+    if (res.cached) parts.push(`<span class="cost" title="Unchanged since the last evaluation: result reused">unchanged</span>`);
+    else if (typeof res.ms === "number") parts.push(`<span class="cost ${res.ms > 1000 ? "slow" : ""}" title="Time this cell took on the server">${res.ms >= 100 ? Math.round(res.ms) : res.ms} ms</span>`);
     meta.innerHTML = parts.join(" · ");
+    for (const o of res.outputs || []) if (o.name && typeof o.num === "number") state.nums.set(o.name, o.num);
   } else if (cell.type === "plot") {
     drawPlot(el, res);
   } else if (cell.type === "text") {

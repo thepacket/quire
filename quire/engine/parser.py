@@ -43,7 +43,7 @@ IDENT = r"[A-Za-z_][A-Za-z0-9_]*"
 PRIME_RE = re.compile(rf"(?<![A-Za-z0-9_.])({IDENT})('+)\s*\(")
 INDEX_RE = re.compile(rf"(?<![A-Za-z0-9_.\]])({IDENT})\[")
 ASSUME_REL_RE = re.compile(r"^\s*(.+?)\s*(>=|<=|>|<|!=)\s*(-?[0-9][0-9./]*|-?pi|-?[0-9./]*\s*pi)\s*$")
-ASSUME_WORD_RE = re.compile(r"^\s*(.+?)\s+((?:[a-z]+\s*)+)$")
+ASSUME_WORD_RE = re.compile(r"^\s*(.+?)\s+((?:[A-Za-z]+\s*)+)$")
 ASSUMPTION_WORDS = {
     "real": {"real": True}, "positive": {"positive": True}, "negative": {"negative": True},
     "nonnegative": {"nonnegative": True}, "nonpositive": {"nonpositive": True}, "nonzero": {"nonzero": True},
@@ -353,6 +353,12 @@ def _setting(line: str) -> Statement | None:
     return None
 
 
+def _is_dimension(word: str) -> bool:
+    from . import units as U
+
+    return word in U.DIMENSION_UNITS or word in U.UNIT_TABLE
+
+
 def _assume(line: str) -> Statement | None:
     """assume x > 0 | assume n positive integer | assume x, y real | assume x > 0, y != 0"""
     if not re.match(r"^\s*assume\b", line):
@@ -400,9 +406,13 @@ def _assume(line: str) -> Statement | None:
             if not m:
                 raise ParseError("Write e.g. 'assume x > 0', 'assume n integer' or 'assume x, y real'.")
             these, spec = take_names(m.group(1)), {}
-            for w in m.group(2).split():
+            words = [w for w in m.group(2).split() if w not in ("is", "a", "an", "in", "has", "unit", "units", "of")]
+            if words and words[-1] not in ASSUMPTION_WORDS and _is_dimension(words[-1]):
+                spec["$dim"] = words.pop()  # "assume L length", "assume F is a force", "assume L in km"
+            for w in words:
                 if w not in ASSUMPTION_WORDS:
-                    raise ParseError(f"Unknown assumption '{w}'. Use: {', '.join(sorted(ASSUMPTION_WORDS))}.")
+                    raise ParseError(f"Unknown assumption '{w}'. Use: {', '.join(sorted(ASSUMPTION_WORDS))}, "
+                                     f"or a dimension such as length, mass, time, force (or a unit: 'assume L in km').")
                 spec.update(ASSUMPTION_WORDS[w])
         for n in pending + these:
             names.append(n)

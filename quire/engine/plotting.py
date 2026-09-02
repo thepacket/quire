@@ -76,6 +76,7 @@ def sample_plot(cell: dict, env: dict, ev) -> dict:
         spec = getattr(ev, "plot_kinds", {}).get(kind) or KINDS.get(kind)
         if spec is None:
             raise QuireError(f"Unknown plot kind '{kind}'.")
+        ev.nominal_values = ev.nominals(env) if hasattr(ev, "nominals") else {}
         res = spec["fn"](cell, env, ev)
         res.setdefault("ok", True)
         res["kind"] = kind
@@ -190,6 +191,9 @@ def resolve(text, ns, ev, *syms):
         expr = expr.lhs - expr.rhs
     if not isinstance(expr, sp.Expr):
         raise QuireError(f"'{text.strip()}' is not something that can be plotted.")
+    nominal = getattr(ev, "nominal_values", None)
+    if nominal:
+        expr = expr.subs(nominal)  # measured quantities plot at their nominal value
     return expr
 
 

@@ -36,20 +36,35 @@ _BASIS = [
     (sp.E, lambda: mp.e),
     (sp.pi / sp.E, lambda: mp.pi / mp.e),
 ]
+# The default basis stays at 20 entries: PSLQ needs roughly n * log10(maxcoeff) digits to rule out
+# coincidences, and the integrals feeding it are evaluated to 50. Extra constants come from the
+# caller: recognize(x, [sqrt(7), log(7), GoldenRatio]).
 
 
-def identify(value, dps: int = DPS) -> sp.Expr | None:
+def _user_basis(constants, dps: int) -> list:
+    """(expression, value factory) for constants the worksheet adds, e.g. [sqrt(7), log(7)]."""
+    out = []
+    for c in constants or []:
+        c = sp.sympify(c)
+        if c.free_symbols or not c.is_number:
+            raise ValueError(f"recognize: the basis constant '{c}' is not a number.")
+        out.append((c, (lambda cc: lambda: mp.mpf(str(sp.N(cc, mp.mp.dps + 5))))(c)))
+    return out
+
+
+def identify(value, dps: int = DPS, constants=None) -> sp.Expr | None:
     """Return an exact expression equal to ``value`` (known to ``dps`` digits), or None.
 
     The coefficient bound shrinks with the available digits so that a short decimal
-    cannot be "recognized" as a coincidence.
+    cannot be "recognized" as a coincidence. ``constants`` extends the basis (their
+    products with the built-in constants are not tried).
     """
     dps = int(dps)
     if dps < 15:
         return None
     # Fewer digits: smaller basis and smaller coefficients, so a relation cannot be a coincidence.
     maxcoeff, nbasis = (MAXCOEFF, len(_BASIS)) if dps >= 40 else ((60, 12) if dps >= 25 else (12, 8))
-    basis = _BASIS[:nbasis]
+    basis = _BASIS[:nbasis] + _user_basis(constants, dps)
     with mp.workdps(dps):
         v = mp.mpf(value)
         if not mp.isfinite(v) or v == 0:
@@ -66,8 +81,10 @@ def identify(value, dps: int = DPS) -> sp.Expr | None:
         return expr
 
 
-def recognize(x, digits: int = DPS):
-    """Worksheet function: recognize(0.6931471805599453) -> log(2)."""
+def recognize(x, digits=DPS, constants=None):
+    """Worksheet function: recognize(0.6931471805599453) -> log(2); recognize(x, [sqrt(7)]) adds constants."""
+    if isinstance(digits, (list, tuple)) and constants is None:  # recognize(x, [c1, c2])
+        digits, constants = DPS, digits
     x = sp.sympify(x)
     if x.free_symbols:
         return x
@@ -79,7 +96,7 @@ def recognize(x, digits: int = DPS):
             v = mp.mpf(str(sp.N(x, max(digits, 30))))
         except (TypeError, ValueError):
             return x
-    res = identify(v, digits)
+    res = identify(v, digits, constants)
     if res is None:
         return x
     hooks.context.setdefault("notes", []).append(f"recognized numerically from {digits} digits; evidence, not proof")
@@ -87,6 +104,6 @@ def recognize(x, digits: int = DPS):
 
 
 def register(api):
-    api.function("recognize", recognize, signature="recognize(x)",
-                 doc="find an exact form for a decimal using known constants (PSLQ); evidence, not proof",
+    api.function("recognize", recognize, signature="recognize(x, [constants])",
+                 doc="find an exact form for a decimal using known constants (PSLQ), plus any you list; evidence, not proof",
                  category="Simplify & expand", example="recognize(2.17758609030360213)")

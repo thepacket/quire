@@ -1,0 +1,74 @@
+{
+ "quire": 1,
+ "title": "Uncertainty and dimensions",
+ "cells": [
+  {
+   "type": "text",
+   "source": "# Uncertainty and dimensions\nA measurement written as `12.3 ± 0.2 m` carries its uncertainty through every formula: results show *value ± uncertainty* by linear error propagation. A symbol can be given a dimension before it has a value, so unit mistakes are caught while the algebra is still symbolic. And only the cells a change touches are re-evaluated: the small grey time after each cell says what it cost, or *unchanged*."
+  },
+  {
+   "type": "text",
+   "source": "## Measured values"
+  },
+  {
+   "type": "math",
+   "source": "L = 1.250 ± 0.005 m\nW = 0.80 m ± 1 cm\nH = 0.30 ± 0.01 m"
+  },
+  {
+   "type": "math",
+   "source": "V = L W H -> liter"
+  },
+  {
+   "type": "math",
+   "source": "A = 2 (L W + L H + W H)\nA -> cm^2"
+  },
+  {
+   "type": "text",
+   "source": "The volume is {{V}} and the relative uncertainty {{uncertainty(V)/nominal(V) * 100}} percent. `nominal(...)` and `uncertainty(...)` pick either part."
+  },
+  {
+   "type": "math",
+   "source": "g = 9.81 ± 0.02 m/s^2\nT = 2 pi sqrt(L/g)\nT -> ms"
+  },
+  {
+   "type": "plot",
+   "kind": "function",
+   "exprs": "L sin(t)",
+   "var": "t",
+   "xmin": "0",
+   "xmax": "6"
+  },
+  {
+   "type": "text",
+   "source": "## Dimensions before values\n`assume m mass, a acceleration` gives the symbols a unit that travels with them. The product is a force, and adding a time to a length is refused."
+  },
+  {
+   "type": "math",
+   "source": "assume m mass, a acceleration\nassume t time, v velocity\nF = m a -> N"
+  },
+  {
+   "type": "math",
+   "source": "E = 1/2 m v^2 -> J\np = m v"
+  },
+  {
+   "type": "math",
+   "source": "v t + 3 m"
+  },
+  {
+   "type": "math",
+   "source": "v t + 3 s"
+  },
+  {
+   "type": "text",
+   "source": "## Recognizing numbers\nThe PSLQ basis has grown, and you can add constants of your own: `recognize(x, [sqrt(7), log(7)])`."
+  },
+  {
+   "type": "math",
+   "source": "recognize(0.37796447300922723, [sqrt(7)])"
+  },
+  {
+   "type": "math",
+   "source": "recognize(1.4674011002723395)"
+  }
+ ]
+}

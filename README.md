@@ -170,6 +170,35 @@ editing chrome; choose "Save as PDF" in the dialog), and the version **history**
 that changes a worksheet keeps the previous version, and each one can be compared cell by
 cell with the current document or restored.
 
+## Measured values, dimensions and the engine
+
+A definition such as `L = 1.250 ± 0.005 m` (also `+-` or `+/-`; units after either number)
+is a measured value. Everything computed from it shows *value ± uncertainty* by linear
+error propagation, in whatever units you convert to; `nominal(expr)` and
+`uncertainty(expr)` pick out either part, plots use the nominal value, and text
+placeholders show both.
+
+`assume m mass, a acceleration` (or `assume F is a force`, `assume R in kohm`) gives a
+symbol a dimension before it has a value: `m a` displays as a force, `-> N` converts it,
+and `v t + 3 s` is refused as adding a time to a length while everything is still
+symbolic. Dimensions: length, mass, time, current, temperature, amount, area, volume,
+velocity, acceleration, force, energy, power, pressure, frequency, charge, voltage,
+resistance, capacitance, inductance, density, momentum, torque, angle, or any unit name.
+
+Evaluation is incremental. Each cell is keyed on its text, the values of the names it
+mentions (or the fact that they are undefined) and the settings in force, so a change
+re-runs only the cells it reaches; the others replay their previous result. The grey time
+after a cell is what it cost on the server, or *unchanged*, and the status line counts the
+cells re-evaluated. While the server answers, a cell that is plain arithmetic on known
+numbers shows a quick `≈` estimate computed in the browser.
+
+`recognize(x)` takes constants of your own: `recognize(x, [sqrt(7), log(7), GoldenRatio])`
+extends the basis for that call. The built-in basis deliberately stays at twenty entries:
+an integer-relation search needs about n·log₁₀(coefficient bound) digits to rule out
+coincidences, and the values it is fed have fifty. Rubi rules were considered and left out: SymPy's port needs `matchpy` and minutes of rule
+loading per process, for little gain over the present chain (manual rules, SymPy, Maxima,
+FriCAS, numeric recognition) on the benchmark.
+
 ## Sharing, storage and platforms
 
 **Read-only links.** In the **Document** dialog of a saved worksheet, *Create read-only
