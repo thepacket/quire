@@ -53,6 +53,10 @@ ASSUMPTION_WORDS = {
 ASSUMPTION_RELATIONS = {">": {"positive": True}, ">=": {"nonnegative": True}, "<": {"negative": True},
                         "<=": {"nonpositive": True}, "!=": {"nonzero": True}}
 UNIT_ALIAS = "qunit_"
+SYM_ALIAS = "qsym_"
+# Names that are functions (beta, gamma, zeta) or Python keywords (lambda) but that people use as variables.
+GREEK_NAMES = ("beta", "gamma", "zeta", "lambda")
+GREEK_RE = re.compile(r"(?<![A-Za-z0-9_.])(" + "|".join(GREEK_NAMES) + r")\b(?!\s*\()")
 NUM_RE = re.compile(r"(?<![A-Za-z0-9_.])(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
 PHRASE_RE = re.compile(rf"(\s*/\s*|\s*)({IDENT})(?!\s*\()(\s*\^\s*(?:-?\d+|\(\s*-?\d+\s*\)))?")
 DEF_RE = re.compile(rf"^\s*({IDENT})\s*(?:\(\s*({IDENT}(?:\s*,\s*{IDENT})*)\s*\))?\s*=(?!=)(.*)$", re.S)
@@ -161,6 +165,11 @@ def split_conversion(src: str) -> tuple[str, str | None]:
     return parts[0], parts[1].strip()
 
 
+def rewrite_greek(src: str) -> str:
+    """beta, gamma, zeta, lambda not followed by '(' are variables, not functions or keywords."""
+    return GREEK_RE.sub(lambda m: SYM_ALIAS + m.group(1), src)
+
+
 def rewrite_primes(src: str) -> str:
     """f'(x) -> dprime_(f, 1, x); f''(x) -> dprime_(f, 2, x)."""
     return PRIME_RE.sub(lambda m: f"dprime_({m.group(1)}, {len(m.group(2))}, ", src)
@@ -231,7 +240,7 @@ def parse(src: str, namespace: dict, unit_names=()) -> sp.Basic:
     src = src.strip()
     if not src:
         raise ParseError("Empty expression.")
-    src = rewrite_primes(src)
+    src = rewrite_greek(rewrite_primes(src))
     _check_source(src)
     src = re.sub(r"\]\s+(?=[A-Za-z_(])", "] * ", src)  # "a[n] b[n]" is a product
     src = rewrite_indexes(src, namespace)

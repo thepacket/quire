@@ -129,6 +129,28 @@ can be called (`y_e(1)`), plotted against `rk4` and the exact `exp(-2 x)`, and i
 enforced. `heat_fdm` returns `u(x, t)`; plot `u(x, 0.05)`. The "Numerical methods" example
 worksheet walks through all four families.
 
+### Quantum computing (`modules/quantum`)
+
+Symbolic linear algebra over complex Hilbert spaces, in Dirac notation:
+
+- **States**: `ket(0, 1)`, `qubit(alpha, beta)`, `bloch_state(θ, φ)`, `plus()`, `bell_state(k)`, `ghz(n)`;
+  `norm_sq`, `normalize`, `same_state` and `global_phase` (global-phase equivalence), `bloch`,
+  `bloch_vector`, `vec` / `to_dirac` to switch between Dirac form and column vectors.
+- **Composition**: `tensor`, `is_entangled` and `schmidt` across any split, `density`,
+  `partial_trace`, `purity`, `entropy` (von Neumann, bits), `fidelity`.
+- **Gates**: `X Y Z H S T CNOT CZ SWAP TOFFOLI`, `Rx Ry Rz phase U3`, `controlled(G)`,
+  `gate_on(G, n, qubits...)`, `apply(G, state, qubits...)`, `circuit(n, [[H, 0], [CNOT, 0, 1]])`.
+  Qubit 0 is the leftmost symbol in `|q0 q1 ...>`.
+- **Observables**: `dagger`, `is_unitary`, `is_hermitian`, `commutator`, `anticommutator`,
+  `expectation`, `qvariance`, `uncertainty(A, B, state)` returning `[σ_A σ_B, |<[A,B]>|/2]`.
+- **Measurement**: `measure(state, qubits...)` (Born rule table), `born`, `collapse` (projective,
+  renormalized), `sample` (simulated shots).
+
+Amplitudes may be symbols: `measure(qubit(alpha, beta))` gives `|α|²` and `|β|²`. The
+"Quantum computing" example walks through states, entanglement, unitaries, measurement and
+interference. Because `beta`, `gamma`, `zeta` are also function names and `lambda` is a
+Python keyword, the parser treats them as variables unless followed by `(`.
+
 ### Backends
 
 A module can also register a *fallback* for an operation:

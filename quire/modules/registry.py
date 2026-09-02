@@ -102,6 +102,8 @@ class Registry:
         out = []
         for mod in self.modules:
             for e in mod.entries:
+                if e.kind == "unit" and len(e.name) == 1:
+                    continue  # single-letter units only count directly after a number; no clash with names
                 if e.name in seen and seen[e.name] != mod.name:
                     out.append(f"'{e.name}' is defined by both {seen[e.name]} and {mod.name}; {mod.name} wins")
                 seen[e.name] = mod.name

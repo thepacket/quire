@@ -14,7 +14,7 @@ from sympy.logic.boolalg import BooleanAtom
 
 from . import units as U
 from .errors import QuireError
-from .parser import UNIT_ALIAS, alias_units, classify, identifiers, parse
+from .parser import GREEK_NAMES, SYM_ALIAS, UNIT_ALIAS, alias_units, classify, identifiers, parse
 
 INTERNAL_NAMES = {"Symbol", "Integer", "Float", "Rational", "Function", "Lambda"}
 ASSUME_KEY = "$assume"  # env slot for symbol assumptions; '$' cannot appear in a name
@@ -188,6 +188,8 @@ class Evaluator:
         ns.update({k: v for k, v in env.items() if not k.startswith("$")})
         for b in bound:
             ns[b] = sp.Symbol(b, **assumed.get(b, {}))
+        for g in GREEK_NAMES:  # 'beta' as a value is the variable beta (a user definition still wins)
+            ns[SYM_ALIAS + g] = env[g] if g in env else sp.Symbol(g, **assumed.get(g, {}))
         return ns
 
     def parse_unit(self, text: str):
