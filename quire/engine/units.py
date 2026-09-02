@@ -265,22 +265,38 @@ def prefer_derived(expr):
     return expr
 
 
+_BASE_ABBREV = {"length": "m", "mass": "kg", "time": "s", "current": "A", "temperature": "K",
+                "amount_of_substance": "mol", "luminous_intensity": "cd"}
+
+
 def unit_label(expr) -> str:
-    """Short plain-text unit label for axes, e.g. 'm/s' or 'V', for values in SI base units."""
+    """Short plain-text unit label for axes, e.g. 'm/s' or 'V', for values in SI base units.
+
+    Derived from the dimension alone, so a sum or a piecewise expression gets the same
+    label as a product would.
+    """
     if not has_units(expr):
         return ""
-    _, unit = split_units(to_base(expr))
-    if unit == 1:
+    try:
+        dim = u.Dimension(SI.get_dimensional_expr(to_base(expr)))
+    except Exception:  # noqa: BLE001
         return ""
-    dim = u.Dimension(SI.get_dimensional_expr(unit))
     dimsys = SI.get_dimension_system()
+    if dimsys.is_dimensionless(dim):
+        return ""
     for cand in _preferred_units():
         try:
             if dimsys.equivalent_dims(dim, u.Dimension(SI.get_dimensional_expr(cand))):
                 return _abbrev(cand)
         except Exception:  # noqa: BLE001
             continue
-    return _abbrev(unit)
+    deps = dimsys.get_dimensional_dependencies(dim)
+    num = [f"{_BASE_ABBREV.get(str(k), str(k))}" + (f"^{v}" if v != 1 else "") for k, v in deps.items() if v > 0]
+    den = [f"{_BASE_ABBREV.get(str(k), str(k))}" + (f"^{-v}" if v != -1 else "") for k, v in deps.items() if v < 0]
+    label = "*".join(num) if num else "1"
+    if den:
+        label += "/" + ("(" + "*".join(den) + ")" if len(den) > 1 else den[0])
+    return label
 
 
 def convert(expr, target):

@@ -93,7 +93,10 @@ def fmt_number(x, digits: int) -> tuple[str, str]:
 
 
 def _is_plain_number(x) -> bool:
-    return isinstance(x, (sp.Integer, sp.Float))
+    if isinstance(x, (sp.Integer, sp.Float)):
+        return True
+    coeff, rest = x.as_coeff_Mul() if isinstance(x, sp.Expr) else (None, None)
+    return isinstance(coeff, (sp.Integer, sp.Float)) and rest == sp.I  # plain decimal times i
 
 
 def approx_of(value, digits: int):
