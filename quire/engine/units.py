@@ -265,7 +265,7 @@ def prefer_derived(expr):
     return expr
 
 
-_BASE_ABBREV = {"length": "m", "mass": "kg", "time": "s", "current": "A", "temperature": "K",
+_BASE_ABBREV = {"mass": "kg", "length": "m", "time": "s", "current": "A", "temperature": "K",
                 "amount_of_substance": "mol", "luminous_intensity": "cd"}
 
 
@@ -292,7 +292,9 @@ def unit_label(expr) -> str:
                 return _abbrev(cand)
         except Exception:  # noqa: BLE001
             continue
-    deps = {str(getattr(k, "name", k)): v for k, v in dimsys.get_dimensional_dependencies(dim).items()}
+    order = list(_BASE_ABBREV)
+    deps = dict(sorted(((str(getattr(k, "name", k)), v) for k, v in dimsys.get_dimensional_dependencies(dim).items()),
+                       key=lambda kv: order.index(kv[0]) if kv[0] in order else 99))
     num = [f"{_BASE_ABBREV.get(k, k)}" + (f"^{v}" if v != 1 else "") for k, v in deps.items() if v > 0]
     den = [f"{_BASE_ABBREV.get(k, k)}" + (f"^{-v}" if v != -1 else "") for k, v in deps.items() if v < 0]
     label = "*".join(num) if num else "1"
