@@ -561,8 +561,9 @@ function renderCatalog() {
     h += `<div class="ref-items">`;
     for (const e of items) {
       const insert = e.example || (e.kind === "function" ? e.signature : e.name);
+      const shown = e.kind === "function" || e.kind === "syntax" ? e.signature : e.name;
       h += `<div class="ref-item" data-insert="${esc(insert)}" title="Click to insert">
-        <span class="sig">${esc(e.kind === "function" ? e.signature : e.name)}${e.module !== "core" ? ` <span class="mod">${esc(e.module)}</span>` : ""}</span>
+        <span class="sig">${esc(shown)}${e.module !== "core" ? ` <span class="mod">${esc(e.module)}</span>` : ""}</span>
         <span class="doc">${esc(e.doc)}</span></div>`;
     }
     h += `</div>`;

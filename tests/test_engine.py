@@ -338,3 +338,9 @@ def test_digits_setting(ev):
     assert r[5]["outputs"][0]["plain"] == "0.739085133215"
     bad = run(ev, "digits 100")[0]
     assert not bad["ok"] and "between" in bad["error"]
+
+
+def test_catalog_lists_syntax_first(ev):
+    entries = ev.registry.catalog()["entries"]
+    assert entries[0]["category"] == "Syntax"
+    assert any(e["name"] == "digits" and e["kind"] == "syntax" for e in entries)

@@ -85,6 +85,23 @@ class LoadedModule:
     fallbacks: dict = field(default_factory=dict)
 
 
+# Language constructs, shown first in the reference panel. (name, signature, doc, example)
+SYNTAX = [
+    ("definition", "x = 5", "define a value for every cell below", "x = 5"),
+    ("function", "f(x) = x^2", "define a function", "f(x) = x^2 + 1"),
+    ("units", "3 m/s^2", "a number followed by units; 2 kg m/s^2, 4.7 kohm", "3 m/s^2"),
+    ("conversion", "expr -> km/hr", "convert a result to other units (-> deg for angles)", "-> km/hr"),
+    ("equation", "a == b", "an equation, for solve, nsolve, dsolve", "solve(x^2 == 4, x)"),
+    ("assume", "assume x > 0", "assumptions: > 0, >= 0, != 0, real, integer, positive integer, s > 1", "assume x > 0"),
+    ("digits", "digits 10", "significant digits shown in the cells below (default 6)", "digits 10"),
+    ("prime", "f'(x)", "derivative of a defined function; f''(x) for the second", "f'(2)"),
+    ("sequence", "a[n]", "a term of a sequence, for rsolve", "rsolve(a[n+1] == 2 a[n], a, n, 1)"),
+    ("power", "x^2", "^ is the power; 2 pi, sin x, n! also work", "x^2"),
+    ("list, matrix", "[1, 2, 3]", "lists in brackets; matrix([[1, 2], [3, 4]]) for matrices", "[1, 2, 3]"),
+    ("several lines", "a = 1\nb = a + 1", "lines in one cell are evaluated in order", ""),
+]
+
+
 @dataclass
 class Registry:
     modules: list[LoadedModule] = field(default_factory=list)
@@ -116,7 +133,9 @@ class Registry:
                  "count": len(m.entries)}
                 for m in self.modules
             ],
-            "entries": [e.describe() for m in self.modules for e in m.entries if not e.hidden],
+            "entries": [{"name": n, "kind": "syntax", "signature": sig, "doc": doc, "module": "core",
+                         "category": "Syntax", "example": ex} for n, sig, doc, ex in SYNTAX]
+                       + [e.describe() for m in self.modules for e in m.entries if not e.hidden],
             "conflicts": self.conflicts(),
         }
 
