@@ -296,7 +296,11 @@ function buildText(cell, body) {
     if (ev.key === "ArrowDown" && ev.metaKey) { const i = cellIndex(cell.id); if (i < state.cells.length - 1) focusCell(state.cells[i + 1].id); }
   });
   ta.addEventListener("focus", () => { state.activeInput = ta; });
-  md.addEventListener("click", edit);
+  md.addEventListener("click", ev => {
+    // a fold, a link or a footnote works as such; anywhere else opens the editor
+    if (ev.target.closest("summary, details.hidden-answer, a")) return;
+    edit();
+  });
   body._edit = edit;
   show();
 }

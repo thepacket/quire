@@ -43,7 +43,7 @@
   },
   {
    "type": "math",
-   "source": "h = 20 m\ng = 9.81 m/s^2"
+   "source": "digits 4\nh = 20 m\ng = 9.81 m/s^2"
   },
   {
    "type": "check",
