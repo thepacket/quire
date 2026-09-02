@@ -173,10 +173,16 @@ def check_dimensions(expr) -> None:
 
 
 def to_base(expr):
+    """Rewrite every unit in SI base units, quantity by quantity.
+
+    sympy's convert_to on a whole expression mis-scales when the expression contains
+    sums, so each Quantity is converted on its own and substituted.
+    """
     if not has_units(expr):
         return expr
     try:
-        return convert_to(expr, BASE_UNITS)
+        rep = {q: convert_to(q, BASE_UNITS) for q in quantities(expr)}
+        return expr.subs(rep)
     except (TypeError, ValueError):
         # e.g. exp(t/second) with a bare symbol t: leave it until t is bound.
         return expr
@@ -313,7 +319,12 @@ def convert(expr, target):
     if target_q <= ANGLE_UNITS and not has_units(expr):
         expr = expr * u.radian  # plain numbers are radians
     try:
-        result = convert_to(expr, target)
+        base = strip_angles(to_base(expr))          # angles are dimensionless: rad -> 1, deg -> pi/180
+        target_base = strip_angles(to_base(target))
+        result = sp.simplify((base / target_base)) * target if not base.free_symbols else \
+            sp.powsimp((base / target_base).expand()) * target
+        if quantities(result) - target_q:
+            result = convert_to(expr, target)  # fall back to sympy's route for odd cases
     except (TypeError, ValueError):
         names = ", ".join(sorted(str(s) for s in expr.free_symbols)) or "the expression"
         raise UnitError(f"Cannot convert while {names} is still symbolic. Give it a value first, "
