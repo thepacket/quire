@@ -1,0 +1,40 @@
+{
+ "quire": 1,
+ "title": "The worksheet as a document",
+ "author": "Quire examples",
+ "cells": [
+  {
+   "type": "text",
+   "source": "# The worksheet as a document\nText cells are Markdown with tables, quotes, footnotes and images. Values from the worksheet appear in sentences with `{{expr}}` and stay live. Another saved worksheet can be imported. The title block above opens **Document**: author, export to HTML or Markdown, print to PDF, and the version history."
+  },
+  {
+   "type": "math",
+   "source": "import rc-circuit\ndigits 4"
+  },
+  {
+   "type": "text",
+   "source": "## A sentence with live numbers\nThe RC circuit imported above has a time constant of {{tau -> ms}}, so after one second the capacitor sits at {{v_c(1 s) -> V}}, which is {{v_c(1 s)/V_s * 100}} percent of the supply[^1]. Change $R$ below and the sentence follows.\n\n[^1]: The charging curve is $v_c(t) = V_s (1 - e^{-t/\\tau})$."
+  },
+  {
+   "type": "math",
+   "source": "R = 2.2 kohm\ntau = R C -> s"
+  },
+  {
+   "type": "text",
+   "source": "## Tables, quotes and display math\n| quantity | symbol | value |\n|---|:---:|---:|\n| resistance | $R$ | {{R}} |\n| capacitance | $C$ | {{C -> uF}} |\n| time constant | $\\tau$ | {{tau -> ms}} |\n\n> Five time constants and the capacitor is charged for all practical purposes: {{(1 - exp(-5)) * 100}} percent.\n\n$$ i(t) = C \\frac{dv_c}{dt} = \\frac{V_s}{R} e^{-t/\\tau} $$"
+  },
+  {
+   "type": "plot",
+   "kind": "function",
+   "exprs": "v_c(t)",
+   "var": "t",
+   "xmin": "0 s",
+   "xmax": "2 s",
+   "annot": "vline(1, \"1 s\"), hline(5, \"supply\")"
+  },
+  {
+   "type": "text",
+   "source": "## Images and links\nUpload a picture with **Data** and write `![caption](name.png)`; links work as `[text](https://example.org)`. Numbered steps:\n1. save this worksheet under a name\n2. change something and save again\n3. open **Document** to compare the two versions or restore the older one\n\n---\nExport HTML gives one file with the math rendered; Export Markdown keeps the LaTeX."
+  }
+ ]
+}

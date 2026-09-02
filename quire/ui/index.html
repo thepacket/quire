@@ -19,8 +19,9 @@
   <button id="btn-save" title="Ctrl/Cmd+S">Save</button>
   <button id="btn-saveas">Save as</button>
   <button id="btn-examples">Examples</button>
-  <button id="btn-data" title="Upload a CSV or Excel file for read_csv / column">Data</button>
-  <input id="data-file" type="file" accept=".csv,.tsv,.txt,.xlsx" hidden>
+  <button id="btn-doc" title="Author, export, print, version history">Document</button>
+  <button id="btn-data" title="Upload a CSV or Excel file for read_csv / column, or an image for a text cell">Data</button>
+  <input id="data-file" type="file" accept=".csv,.tsv,.txt,.xlsx,.png,.jpg,.jpeg,.gif,.svg,.webp" hidden>
   <button id="btn-palette" class="toggle" title="Insert math notation">∑ Palette</button>
   <button id="btn-ref" class="toggle">Reference</button>
 </header>
@@ -28,6 +29,7 @@
 <div id="palette" class="palette hidden"></div>
 <div class="layout">
   <main>
+    <div id="titleblock" class="titleblock" title="Author, export, print, history"><h1 id="tb-title"></h1><div id="tb-meta"></div></div>
     <div id="cells"></div>
     <div class="add-end">
       <button data-add="math">+ Math</button>

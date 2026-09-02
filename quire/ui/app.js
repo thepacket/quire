@@ -31,32 +31,81 @@ function katexHtml(latex, display = false) {
   return `<code>${esc(latex)}</code>`;
 }
 
-// ---------- Markdown (small subset) ----------
-function inlineMd(s) {
-  return s.split(/(\$[^$\n]+\$)/g).map(part => {
+// ---------- Markdown (headings, lists, tables, quotes, images, links, footnotes, $math$, $$display$$, {{values}}) ----------
+function imgSrc(src) {
+  if (/^(https?:)?\/\//i.test(src) || /^data:image\//i.test(src)) return src;
+  return "/files/" + src.replace(/^\/files\//, "");
+}
+function renderValue(ctx) {
+  const v = ctx.values ? ctx.values[ctx.k] : null;
+  ctx.k++;
+  if (!v) return `<span class="val pending">…</span>`;
+  if (v.error) return `<span class="val err" title="${esc(v.error)}">${esc(v.error)}</span>`;
+  return `<span class="val">${katexHtml(v.latex)}${v.approx ? `<span class="approx">${katexHtml("\\approx " + v.approx)}</span>` : ""}</span>`;
+}
+function inlineMd(s, ctx = {}) {
+  return s.split(/(`[^`]+`|\$[^$\n]+\$)/g).map(part => {
+    if (part.length > 2 && part.startsWith("`") && part.endsWith("`")) return `<code>${esc(part.slice(1, -1))}</code>`;
     if (part.length > 2 && part.startsWith("$") && part.endsWith("$")) return katexHtml(part.slice(1, -1));
     let h = esc(part);
-    h = h.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*]+)\*/g, "$1<i>$2</i>").replace(/`(.+?)`/g, "<code>$1</code>");
+    h = h.replace(/\{\{[^}]*\}\}/g, () => renderValue(ctx));
+    h = h.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (m, alt, src) => `<img src="${imgSrc(src)}" alt="${alt}" title="${alt}">`);
+    h = h.replace(/\[\^([^\]\s]+)\]/g, (m, id) => `<sup class="fn"><a href="#fn-${ctx.cellId || ""}-${id}">${id}</a></sup>`);
+    h = h.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, url) => /^(https?:\/\/|#|\/)/i.test(url) ? `<a href="${url}" target="_blank" rel="noopener">${t}</a>` : m);
+    h = h.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*]+)\*/g, "$1<i>$2</i>");
     return h;
   }).join("");
 }
-function markdown(text) {
-  const out = []; let para = []; let list = [];
+function markdown(text, ctx = {}) {
+  ctx.k = 0;
+  const lines = text.split("\n"), out = [], foot = [];
+  let para = [], list = null, quote = [];
   const flush = () => {
-    if (para.length) { out.push(`<p>${inlineMd(para.join(" "))}</p>`); para = []; }
-    if (list.length) { out.push(`<ul>${list.map(l => `<li>${inlineMd(l)}</li>`).join("")}</ul>`); list = []; }
+    if (para.length) { out.push(`<p>${inlineMd(para.join(" "), ctx)}</p>`); para = []; }
+    if (list) { out.push(`<${list.tag}>${list.items.map(l => `<li>${inlineMd(l, ctx)}</li>`).join("")}</${list.tag}>`); list = null; }
+    if (quote.length) { out.push(`<blockquote>${inlineMd(quote.join(" "), ctx)}</blockquote>`); quote = []; }
   };
-  for (const raw of text.split("\n")) {
-    const line = raw.trimEnd();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd(), t = line.trim();
+    if (t.startsWith("$$")) {
+      flush();
+      let buf = t;
+      if (!(t.length > 4 && t.endsWith("$$"))) while (++i < lines.length) { buf += "\n" + lines[i]; if (lines[i].trim().endsWith("$$")) break; }
+      out.push(`<div class="dmath">${katexHtml(buf.replace(/^\$\$/, "").replace(/\$\$$/, ""), true)}</div>`);
+      continue;
+    }
+    if (/^(-{3,}|\*{3,})$/.test(t)) { flush(); out.push("<hr>"); continue; }
     const h = /^(#{1,3})\s+(.*)$/.exec(line);
-    if (h) { flush(); out.push(`<h${h[1].length}>${inlineMd(h[2])}</h${h[1].length}>`); continue; }
-    const li = /^[-*]\s+(.*)$/.exec(line);
-    if (li) { if (para.length) flush(); list.push(li[1]); continue; }
-    if (!line.trim()) { flush(); continue; }
-    if (list.length) flush();
+    if (h) { flush(); out.push(`<h${h[1].length}>${inlineMd(h[2], ctx)}</h${h[1].length}>`); continue; }
+    const fn = /^\[\^([^\]\s]+)\]:\s*(.*)$/.exec(t);
+    if (fn) { flush(); foot.push([fn[1], fn[2]]); continue; }
+    if (t.startsWith("|") && i + 1 < lines.length && /^\|?\s*:?-{2,}/.test(lines[i + 1].trim())) {
+      flush();
+      const cells = r => r.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim());
+      const head = cells(t), align = cells(lines[i + 1]).map(a => a.startsWith(":") && a.endsWith(":") ? "center" : a.endsWith(":") ? "right" : "left");
+      const rows = [];
+      i += 1;
+      while (i + 1 < lines.length && lines[i + 1].trim().startsWith("|")) rows.push(cells(lines[++i]));
+      const td = (c, k, tag) => `<${tag} style="text-align:${align[k] || "left"}">${inlineMd(c, ctx)}</${tag}>`;
+      out.push(`<table><thead><tr>${head.map((c, k) => td(c, k, "th")).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((c, k) => td(c, k, "td")).join("")}</tr>`).join("")}</tbody></table>`);
+      continue;
+    }
+    const q = /^>\s?(.*)$/.exec(t);
+    if (q) { if (para.length || list) flush(); quote.push(q[1]); continue; }
+    const ol = /^\d+[.)]\s+(.*)$/.exec(t), ul = /^[-*+]\s+(.*)$/.exec(t);
+    if (ol || ul) {
+      const tag = ol ? "ol" : "ul";
+      if (para.length || quote.length || (list && list.tag !== tag)) flush();
+      if (!list) list = { tag, items: [] };
+      list.items.push((ol || ul)[1]);
+      continue;
+    }
+    if (!t) { flush(); continue; }
+    if (list || quote.length) flush();
     para.push(line);
   }
   flush();
+  if (foot.length) out.push(`<div class="footnotes"><ol>${foot.map(([id, txt]) => `<li id="fn-${ctx.cellId || ""}-${id}"><sup>${esc(id)}</sup> ${inlineMd(txt, ctx)}</li>`).join("")}</ol></div>`);
   return out.join("");
 }
 
@@ -67,11 +116,18 @@ function newCell(type) {
   return { ...base, source: "" };
 }
 function serialize() {
-  return { quire: 1, title: state.title, cells: state.cells.map(c => ({ ...c })) };
+  return { quire: 1, title: state.title, author: state.author || "", cells: state.cells.map(c => ({ ...c })) };
+}
+function renderTitleBlock() {
+  $("#tb-title").textContent = state.title || "Untitled";
+  $("#tb-meta").textContent = [state.author, state.savedAt ? "saved " + state.savedAt : ""].filter(Boolean).join(" · ");
 }
 function loadDoc(doc, fileName = null) {
   state.title = doc.title || "Untitled";
+  state.author = doc.author || "";
+  state.savedAt = doc.saved_at || null;
   state.fileName = fileName;
+  renderTitleBlock();
   state.cells = (doc.cells || []).map(c => ({ ...newCell(c.type || "math"), ...c, id: c.id || uid() }));
   if (!state.cells.length) state.cells.push(newCell("math"));
   state.results = new Map();
@@ -153,7 +209,8 @@ function buildMath(cell, body) {
     <div class="out"></div><div class="warn"></div><div class="err"></div><div class="meta"></div>`;
   const ta = $("textarea", body);
   ta.value = cell.source || "";
-  ta.addEventListener("input", () => { cell.source = ta.value; autogrow(ta); touch(); acShow(ta); });
+  body.parentElement.dataset.src = cell.source || "";  // shown instead of the textarea when printing
+  ta.addEventListener("input", () => { cell.source = ta.value; body.parentElement.dataset.src = ta.value; autogrow(ta); touch(); acShow(ta); });
   ta.addEventListener("keydown", ev => { if (acKey(ev)) return; keyNav(cell, ta, ev); });
   ta.addEventListener("focus", () => { state.activeInput = ta; });
   ta.addEventListener("blur", () => setTimeout(acClose, 120));
@@ -166,11 +223,13 @@ function buildText(cell, body) {
   ta.value = cell.source || "";
   const show = () => {
     if (document.activeElement === ta) return;
-    md.innerHTML = markdown(cell.source || "");
+    const res = state.results.get(cell.id) || {};
+    md.innerHTML = markdown(cell.source || "", { cellId: cell.id, values: res.values || null });
     md.style.display = ""; ta.style.display = "none";
   };
+  body._show = show;
   const edit = () => { md.style.display = "none"; ta.style.display = ""; autogrow(ta); ta.focus(); };
-  ta.addEventListener("input", () => { cell.source = ta.value; autogrow(ta); setDirty(true); });
+  ta.addEventListener("input", () => { cell.source = ta.value; autogrow(ta); setDirty(true); if (/\{\{/.test(ta.value)) scheduleEval(); });
   ta.addEventListener("blur", show);
   ta.addEventListener("keydown", ev => {
     if (ev.key === "Escape") ta.blur();
@@ -324,7 +383,7 @@ function scheduleEval() {
 async function evaluateNow() {
   clearTimeout(state.evalTimer);
   const seq = ++state.evalSeq;
-  const cells = state.cells.filter(c => c.type !== "text");
+  const cells = state.cells;
   let data;
   try {
     const r = await fetch("/api/eval", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cells }) });
@@ -375,6 +434,9 @@ function renderResult(res) {
     meta.innerHTML = parts.join(" · ");
   } else if (cell.type === "plot") {
     drawPlot(el, res);
+  } else if (cell.type === "text") {
+    const body = $(".body", el);
+    if (body._show) body._show();
   }
 }
 
@@ -819,6 +881,161 @@ function insertAtCursor(text) {
   inp.focus();
 }
 
+// ---------- Document: title block, export, print, history ----------
+function download(name, content, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([content], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function docFileName() { return (state.fileName || state.title || "worksheet").replace(/[^\w-]+/g, "_"); }
+function today() { const d = new Date(); return d.toISOString().slice(0, 10); }
+async function plotImages(cell) {
+  const el = state.els.get(cell.id); if (!el) return [];
+  const box = $(".plotly-box", el);
+  if (box && !box.hidden && window.Plotly) {
+    try { return [{ url: await Plotly.toImage(box, { format: "png", width: 900, height: 520 }), png: true }]; } catch (e) { return []; }
+  }
+  return [...el.querySelectorAll(".panels svg")].map(svg => {
+    const src = svg.outerHTML.replace("<svg ", `<svg xmlns="http://www.w3.org/2000/svg" `);
+    return { url: "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(src))), svg: src };
+  });
+}
+const EXPORT_CSS = `body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#1f2328;margin:0;background:#fff}
+article{max-width:820px;margin:0 auto;padding:40px 24px 80px;line-height:1.55}h1.title{font-size:30px;margin:0 0 4px}.meta{color:#6b7280;font-size:14px;margin-bottom:28px}
+.text h1{font-size:24px}.text h2{font-size:20px}.text h3{font-size:16.5px}.text table{border-collapse:collapse;margin:8px 0}.text th,.text td{border:1px solid #e3e1db;padding:4px 10px}
+.text blockquote{border-left:3px solid #e3e1db;margin:8px 0;padding:2px 12px;color:#4b5563}.text img{max-width:100%}.text code{font-family:ui-monospace,Menlo,monospace;background:#f0efea;padding:1px 4px;border-radius:4px}
+.footnotes{font-size:13px;color:#4b5563;border-top:1px solid #e3e1db;margin-top:12px}.dmath{margin:8px 0}
+.math{margin:10px 0 14px;padding-left:12px;border-left:3px solid #2f6fed}.math pre.src{font-family:ui-monospace,Menlo,monospace;font-size:13.5px;margin:0 0 4px;white-space:pre-wrap;color:#374151}
+.out{font-size:17px}.out-line{margin:2px 0 6px;display:flex;flex-wrap:wrap;align-items:baseline;gap:14px}.approx{color:#6b7280;font-size:.9em}.note{color:#b7791f;font-size:12px}.err{color:#c0392b;font-size:13px}
+.reading{color:#6b7280;font-size:14px}.reading .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-right:6px}
+.steps{margin:4px 0 8px;padding:6px 10px;border-left:2px solid #e3e1db;font-size:14px}.step{display:flex;flex-wrap:wrap;gap:8px;margin:3px 0}.step-n{color:#6b7280;font-size:12px;min-width:18px}
+.plot{margin:10px 0 14px;padding-left:12px;border-left:3px solid #1f9d6f}.plot img,.plot svg{max-width:100%;width:700px;border:1px solid #e3e1db;border-radius:6px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px}.legend .swatch{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:6px;border-radius:2px}
+.val{padding:0 2px}.val.err{color:#c0392b}footer{color:#9ca3af;font-size:12px;margin-top:40px}`;
+async function exportHtml() {
+  const parts = [];
+  for (const c of state.cells) {
+    const el = state.els.get(c.id), res = state.results.get(c.id) || {};
+    if (c.type === "text") parts.push(`<section class="text">${markdown(c.source || "", { cellId: c.id, values: res.values || null })}</section>`);
+    else if (c.type === "math") {
+      let out = "";
+      if (el) { const clone = $(".out", el).cloneNode(true); clone.querySelectorAll(".slider-row").forEach(n => n.remove()); out = clone.innerHTML; }
+      parts.push(`<section class="math"><pre class="src">${esc(c.source || "")}</pre><div class="out">${out}</div>${res.error ? `<div class="err">${esc(res.error)}</div>` : ""}</section>`);
+    } else {
+      const imgs = await plotImages(c);
+      const legend = el ? $(".legend", el).innerHTML : "";
+      parts.push(`<section class="plot">${imgs.map(i => i.svg || `<img src="${i.url}" alt="plot">`).join("")}<div class="legend">${legend}</div></section>`);
+    }
+  }
+  const meta = [state.author, state.savedAt || today()].filter(Boolean).join(" · ");
+  const html = `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(state.title)}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"><style>${EXPORT_CSS}</style></head>
+<body><article><h1 class="title">${esc(state.title)}</h1><div class="meta">${esc(meta)}</div>\n${parts.join("\n")}\n<footer>Made with Quire</footer></article></body></html>`;
+  download(docFileName() + ".html", html, "text/html");
+}
+async function exportMarkdown() {
+  const meta = [state.author, state.savedAt || today()].filter(Boolean).join(" · ");
+  const lines = [`# ${state.title}`, meta ? `*${meta}*` : "", ""];
+  for (const c of state.cells) {
+    const res = state.results.get(c.id) || {};
+    if (c.type === "text") {
+      let k = 0;
+      lines.push((c.source || "").replace(/\{\{[^}]*\}\}/g, m => { const v = (res.values || [])[k++]; return v && !v.error ? `$${v.latex}$` : m; }), "");
+    } else if (c.type === "math") {
+      lines.push("```quire", c.source || "", "```");
+      for (const o of res.outputs || []) if (o.latex) lines.push(`$$${o.head ? o.head + " = " : ""}${o.latex}${o.approx ? " \\approx " + o.approx : ""}$$`);
+      if (res.error) lines.push(`> Error: ${res.error}`);
+      lines.push("");
+    } else {
+      const imgs = await plotImages(c);
+      const K = PLOT_KINDS[c.kind] || {};
+      const alt = `${K.label || c.kind}: ${c.exprs || ""}`;
+      lines.push(...(imgs.length ? imgs.map(i => `![${alt}](${i.url})`) : [`*(plot, ${alt})*`]), "");
+    }
+  }
+  download(docFileName() + ".md", lines.join("\n"), "text/markdown");
+}
+function cellText(c) {
+  if (c.type !== "plot") return c.source || "";
+  const bits = [`${c.kind}: ${c.exprs || ""}`];
+  if (c.expr2) bits.push(c.expr2); if (c.expr3) bits.push(c.expr3);
+  if (c.var) bits.push(`var ${c.var}`);
+  if (c.xmin || c.xmax) bits.push(`${c.xmin || ""}..${c.xmax || ""}`);
+  if (c.ymin || c.ymax) bits.push(`y ${c.ymin || ""}..${c.ymax || ""}`);
+  if (c.annot) bits.push(`annotate ${c.annot}`);
+  return bits.join("\n");
+}
+function lineDiff(a, b) {
+  const A = a.split("\n"), B = b.split("\n"), n = A.length, m = B.length;
+  const L = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { out.push([" ", A[i]]); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) { out.push(["-", A[i]]); i++; }
+    else { out.push(["+", B[j]]); j++; }
+  }
+  while (i < n) out.push(["-", A[i++]]);
+  while (j < m) out.push(["+", B[j++]]);
+  return out;
+}
+function diffHtml(oldDoc, newDoc) {
+  const oldMap = new Map((oldDoc.cells || []).map(c => [c.id, c])), newIds = new Set((newDoc.cells || []).map(c => c.id));
+  const rows = [];
+  for (const c of newDoc.cells || []) {
+    const o = oldMap.get(c.id);
+    if (!o) rows.push({ st: "added", text: lineDiff("", cellText(c)), type: c.type });
+    else if (cellText(o) !== cellText(c)) rows.push({ st: "changed", text: lineDiff(cellText(o), cellText(c)), type: c.type });
+  }
+  for (const c of oldDoc.cells || []) if (!newIds.has(c.id)) rows.push({ st: "removed", text: lineDiff(cellText(c), ""), type: c.type });
+  if (oldDoc.title !== newDoc.title) rows.unshift({ st: "changed", text: lineDiff(`title: ${oldDoc.title || ""}`, `title: ${newDoc.title || ""}`), type: "document" });
+  if (!rows.length) return `<div class="hint">No differences in the cells.</div>`;
+  return rows.map(r => `<div class="dcell ${r.st}"><div class="dhead">${r.type} cell · ${r.st}</div><pre class="diff">${r.text.map(([k, l]) => `<span class="${k === "+" ? "add" : k === "-" ? "del" : "same"}">${k} ${esc(l)}</span>`).join("")}</pre></div>`).join("");
+}
+async function documentDialog() {
+  modal("Document", `
+    <label class="row"><span>Author</span><input id="doc-author" class="name" value="${esc(state.author || "")}" placeholder="shown in the title block and exports"></label>
+    <div class="hint">${state.fileName ? `Saved as <b>${esc(state.fileName)}</b>${state.savedAt ? " on " + esc(state.savedAt) : ""}` : "Not saved yet: save it to start a version history."}</div>
+    <div class="doc-actions">
+      <button data-do="html" title="A single HTML file with the math rendered and the plots as pictures">Export HTML</button>
+      <button data-do="md" title="Markdown with LaTeX math; plots embedded as images">Export Markdown</button>
+      <button data-do="print" title="Print, or save as PDF from the print dialog">Print / PDF</button>
+    </div>
+    <h4>History</h4><div id="doc-history" class="hint">${state.fileName ? "Loading…" : ""}</div><div id="doc-diff"></div>`);
+  const author = $("#doc-author");
+  author.addEventListener("input", () => { state.author = author.value; setDirty(true); renderTitleBlock(); });
+  $("#modal-body").onclick = async ev => {
+    const b = ev.target.closest("button"); if (!b) return;
+    if (b.dataset.do === "html") exportHtml();
+    if (b.dataset.do === "md") exportMarkdown();
+    if (b.dataset.do === "print") { closeModal(); setTimeout(() => window.print(), 150); }
+    if (b.dataset.diff) {
+      try {
+        const { doc } = await api("/api/version", { name: state.fileName, stamp: b.dataset.diff });
+        $("#doc-diff").innerHTML = `<div class="hint">Changes since ${esc(b.dataset.time)} (− then, + now):</div>` + diffHtml(doc, serialize());
+      } catch (e) { alert(e.message); }
+    }
+    if (b.dataset.restore) {
+      if (!confirm(`Load the version saved ${b.dataset.time}? The current cells are replaced (nothing is written until you save).`)) return;
+      try {
+        const { doc } = await api("/api/version", { name: state.fileName, stamp: b.dataset.restore });
+        const name = state.fileName;
+        closeModal(); loadDoc(doc, name); setDirty(true);
+      } catch (e) { alert(e.message); }
+    }
+  };
+  if (!state.fileName) return;
+  try {
+    const r = await fetch("/api/history?name=" + encodeURIComponent(state.fileName)); const h = await r.json();
+    const list = $("#doc-history"); if (!list) return;
+    list.innerHTML = h.versions && h.versions.length
+      ? h.versions.map(v => `<div class="ver"><span>${esc(v.time)}</span><span class="hint">${v.cells == null ? "" : v.cells + " cells"}</span><button data-diff="${esc(v.stamp)}" data-time="${esc(v.time)}">compare</button><button data-restore="${esc(v.stamp)}" data-time="${esc(v.time)}">restore</button></div>`).join("")
+      : "No earlier versions yet: each save that changes the worksheet keeps the previous one here.";
+  } catch (e) { /* ignore */ }
+}
+
 // ---------- Files ----------
 async function api(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -828,6 +1045,7 @@ async function api(path, body) {
 }
 function modal(title, bodyHtml) {
   $("#modal-title").textContent = title; $("#modal-body").innerHTML = bodyHtml; $("#modal").classList.remove("hidden");
+  $(".modal-box").classList.toggle("wide", title === "Document");
 }
 function closeModal() { $("#modal").classList.add("hidden"); }
 
@@ -854,7 +1072,7 @@ async function save(as = false) {
   }
   try {
     const r = await api("/api/save", { name, doc: serialize() });
-    state.fileName = r.saved; setDirty(false);
+    state.fileName = r.saved; state.savedAt = r.saved_at || state.savedAt; setDirty(false); renderTitleBlock();
     status(`Saved to ${esc(r.path)}`);
   } catch (e) { alert(e.message); }
 }
@@ -961,7 +1179,9 @@ function acKey(ev) {
 
 // ---------- Wiring ----------
 function init() {
-  $("#title").addEventListener("input", ev => { state.title = ev.target.value; setDirty(true); });
+  $("#title").addEventListener("input", ev => { state.title = ev.target.value; setDirty(true); renderTitleBlock(); });
+  $("#btn-doc").onclick = documentDialog;
+  $("#titleblock").addEventListener("click", documentDialog);
   $("#btn-new").onclick = () => { if (!state.dirty || confirm("Discard unsaved changes?")) loadDoc({ title: "Untitled", cells: [{ type: "math", source: "" }] }); };
   $("#btn-open").onclick = () => openDialog(false);
   $("#btn-examples").onclick = () => openDialog(true);
@@ -975,8 +1195,15 @@ function init() {
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     try {
       const r = await api("/api/upload", { filename: file.name, content: btoa(bin) });
-      status(`Uploaded as data file <b>${esc(r.name)}</b>: use read_csv(${esc(r.name)}) or column(${esc(r.name)}, header)`);
-      evaluateNow();
+      if (r.image) {
+        const snippet = `![${r.name}](${r.file})`;
+        const inp = state.activeInput;
+        if (inp && document.body.contains(inp) && inp.closest(".cell.text")) insertAtCursor(snippet);
+        status(`Uploaded image <b>${esc(r.file)}</b>: write <code>${esc(snippet)}</code> in a text cell`);
+      } else {
+        status(`Uploaded as data file <b>${esc(r.name)}</b>: use read_csv(${esc(r.name)}) or column(${esc(r.name)}, header)`);
+        evaluateNow();
+      }
     } catch (e) { alert(e.message); }
     ev.target.value = "";
   });

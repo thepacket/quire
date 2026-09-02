@@ -19,6 +19,35 @@ from .steps import Steps
 from .notation import normalize, uses_notation
 
 INTERNAL_NAMES = {"Symbol", "Integer", "Float", "Rational", "Function", "Lambda"}
+IMPORT_RE = re.compile(r"^\s*import\s+(.+?)\s*$")
+
+
+def placeholders(text: str) -> list[str]:
+    """The {{expr}} placeholders of a text, skipping $...$ math spans."""
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        if text[i] == "`":  # skip a code span
+            j = text.find("`", i + 1)
+            if j < 0:
+                break
+            i = j + 1
+            continue
+        if text[i] == "$":  # skip a math span ($...$ or $$...$$)
+            j = text.find("$$" if text.startswith("$$", i) else "$", i + (2 if text.startswith("$$", i) else 1))
+            if j < 0:
+                break
+            i = j + (2 if text.startswith("$$", i) else 1)
+            continue
+        if text.startswith("{{", i):
+            j = text.find("}}", i + 2)
+            if j < 0:
+                break
+            out.append(text[i + 2:j].strip())
+            i = j + 2
+            continue
+        i += 1
+    return out
 ASSUME_KEY = "$assume"  # env slot for symbol assumptions; '$' cannot appear in a name
 BOUNDS_KEY = "$bounds"  # env slot for numeric bounds from 'assume s > 1' (used by backends)
 DIGITS_KEY = "$digits"  # env slot for the display precision set by 'digits n' 
@@ -186,8 +215,11 @@ def to_plain(value) -> str:
 
 
 class Evaluator:
-    def __init__(self, registry, digits: int = 6):
+    def __init__(self, registry, digits: int = 6, loader=None):
         self.registry = registry
+        self.loader = loader  # name -> (doc, stamp) for 'import name', or None
+        self._import_cache: dict = {}
+        self._import_stack: list = []
         self.base_namespace = registry.namespace()
         self.plot_kinds = registry.plot_kinds() if hasattr(registry, "plot_kinds") else {}
         self.units_namespace = {e.name: e.value for m in registry.modules for e in m.entries
@@ -230,12 +262,63 @@ class Evaluator:
             kind = cell.get("type", "math")
             cid = cell.get("id")
             if kind == "text":
-                results.append({"id": cid, "ok": True})
+                results.append({"id": cid, **self.evaluate_text(cell.get("source", ""), env)})
             elif kind == "plot":
                 results.append({"id": cid, **sample_plot(cell, env, self)})
             else:
                 results.append({"id": cid, **self.evaluate_math(cell.get("source", ""), env)})
         return results
+
+    # -- text cells: {{expr}} placeholders --------------------------------
+    def evaluate_text(self, source: str, env: dict) -> dict:
+        """Values for the {{expr}} placeholders of a text cell (outside $...$ math), in order."""
+        if "{{" not in source:
+            return {"ok": True}
+        values = []
+        for expr in placeholders(source):
+            r = self.evaluate_math(expr, dict(env))  # a copy: a placeholder never defines anything
+            if r["ok"] and r["outputs"]:
+                o = r["outputs"][-1]
+                values.append({"latex": o.get("latex", ""), "plain": o.get("plain", ""), "approx": o.get("approx"),
+                               "approx_plain": o.get("approx_plain")})
+            else:
+                values.append({"error": r["error"] or "No value."})
+        return {"ok": True, "values": values}
+
+    # -- import name: definitions of another worksheet ------------------
+    def import_worksheet(self, name: str, env: dict) -> list[str]:
+        if self.loader is None:
+            raise QuireError("Importing worksheets is not available here.")
+        if name in self._import_stack:
+            raise QuireError(f"'{name}' imports itself (through {' -> '.join(self._import_stack + [name])}).")
+        if len(self._import_stack) >= 8:
+            raise QuireError("Imports are nested too deeply.")
+        loaded = self.loader(name)
+        if loaded is None:
+            raise QuireError(f"No worksheet named '{name}'. Use the name it was saved under.")
+        doc, stamp = loaded
+        cached = self._import_cache.get(name)
+        if cached is None or cached[0] != stamp:
+            self._import_stack.append(name)
+            try:
+                sub: dict = {}
+                names: list[str] = []
+                for cell in doc.get("cells", []):
+                    if cell.get("type", "math") != "math":
+                        continue
+                    r = self.evaluate_math(cell.get("source", ""), sub)
+                    if not r["ok"]:
+                        raise QuireError(f"In '{name}': {r['error']}")
+                    names.extend(n for n in r["defines"] if n not in names)
+            finally:
+                self._import_stack.pop()
+            cached = (stamp, {n: sub[n] for n in names if n in sub}, dict(sub.get(ASSUME_KEY, {})))
+            self._import_cache[name] = cached
+        _, defs, assumed = cached
+        env.update(defs)
+        if assumed:
+            env.setdefault(ASSUME_KEY, {}).update({k: v for k, v in assumed.items() if k in defs})
+        return list(defs)
 
     # -- one math cell --------------------------------------------------
     def evaluate_math(self, source: str, env: dict) -> dict:
@@ -251,6 +334,15 @@ class Evaluator:
             try:
                 hooks.context["notes"] = []
                 hooks.context.pop("slider", None)
+                m = IMPORT_RE.match(line)
+                if m:
+                    name = m.group(1).strip().strip("\"'")
+                    names = self.import_worksheet(name, env)
+                    defines.extend(n for n in names if n not in defines)
+                    shown = ", ".join(names) if names else "nothing"
+                    outputs.append({"kind": "import", "latex": r"\text{imported " + shown.replace("_", r"\_") + " from " + name.replace("_", r"\_") + "}",
+                                    "plain": f"imported {shown} from {name}", "imported": names, "worksheet": name})
+                    continue
                 st = classify(line)
                 if st.kind == "assume":
                     outputs.append(self.assume(st, env))

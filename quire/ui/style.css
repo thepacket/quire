@@ -152,3 +152,50 @@ svg.plot { cursor: crosshair; }
 .annot-wrap { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); padding: 0 0 6px; }
 .annot-wrap input { flex: 1; font-family: var(--mono); font-size: 13px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: var(--paper); }
 .annot-wrap input:focus { outline: none; border-color: var(--accent); }
+
+.titleblock { max-width: 880px; margin: 0 auto 14px; padding: 0 0 10px 31px; cursor: pointer; }
+.titleblock h1 { font-size: 28px; margin: 0 0 2px; letter-spacing: -.01em; }
+.titleblock #tb-meta { color: var(--muted); font-size: 13.5px; min-height: 16px; }
+.titleblock:hover h1 { color: var(--accent); }
+.md table { border-collapse: collapse; margin: 6px 0; font-size: 14.5px; }
+.md th, .md td { border: 1px solid var(--line); padding: 4px 10px; }
+.md th { background: #f6f5f2; font-weight: 600; }
+.md blockquote { border-left: 3px solid var(--line); margin: 6px 0; padding: 2px 12px; color: #4b5563; }
+.md img { max-width: 100%; border-radius: 6px; }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.md ol { margin: 4px 0; padding-left: 22px; }
+.md a { color: var(--accent); }
+.md .dmath { margin: 6px 0; overflow-x: auto; }
+.md .footnotes { font-size: 13px; color: #4b5563; border-top: 1px solid var(--line); margin-top: 10px; padding-top: 4px; }
+.md .footnotes ol { padding-left: 18px; }
+.md sup.fn a { text-decoration: none; color: var(--accent); }
+.md .val { padding: 0 2px; }
+.md .val .approx { color: var(--muted); font-size: .9em; margin-left: 6px; }
+.md .val.err { color: var(--error); font-size: 13px; background: #fdf2f0; border-radius: 4px; padding: 0 4px; }
+.md .val.pending { color: var(--muted); }
+.modal-body label.row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.modal-body label.row span { color: var(--muted); font-size: 13px; }
+.modal-body label.row input.name { margin: 0; }
+.doc-actions { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0; }
+.modal-body h4 { margin: 12px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.ver { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13.5px; border-top: 1px solid #f0efea; }
+.ver span:first-child { font-family: var(--mono); font-size: 12.5px; }
+.ver .hint { flex: 1; margin: 0; }
+.ver button { font-size: 12px; padding: 2px 8px; }
+.dcell { margin: 8px 0; }
+.dhead { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.dcell.added .dhead { color: #1f9d6f; } .dcell.removed .dhead { color: var(--error); }
+pre.diff { font-family: var(--mono); font-size: 12.5px; margin: 2px 0; padding: 6px 8px; background: #fafaf8; border-radius: 6px; white-space: pre-wrap; }
+pre.diff .add { color: #1f7a4f; background: #e6f6ee; display: block; } pre.diff .del { color: #a33; background: #fdeeee; display: block; } pre.diff .same { color: #555; display: block; }
+.modal-box.wide { width: 720px; }
+
+@media print {
+  .topbar, .palette, .ref, .status, .tools, .adder, .add-end, .modal, .plot-form, .annot-wrap, .legend .lg.off, .slider-row, .meta, textarea.src { display: none !important; }
+  body, main { background: #fff; overflow: visible; }
+  main { padding: 0; }
+  .layout { display: block; }
+  .cell { break-inside: avoid; background: none; }
+  .cell.math::before { content: attr(data-src); display: block; font-family: var(--mono); font-size: 12.5px; color: #374151; white-space: pre-wrap; padding: 0 10px; }
+  .md, .out { display: block !important; }
+  svg.plot, .plotly-box { max-width: 100%; }
+}

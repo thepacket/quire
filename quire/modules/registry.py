@@ -120,6 +120,8 @@ SYNTAX = [
     ("sum sign", "Σ_{k=1}^{n} k^2", "Σ or Π with _{k=a}^{b} bounds", "Σ_{k=1}^{n} k^2"),
     ("d/dx", "d/dx sin(x)", "derivative in paper notation; d²/dx² for the second", "d/dx sin(x)"),
     ("symbols", "θ, x², √2, ≤, ×", "Greek letters, superscripts and subscripts, √, ≤ ≥ ≠ × · are read as written", "√2 × θ²"),
+    ("import", "import beam", "definitions of another saved worksheet, by its name", "import beam"),
+    ("value in text", "{{delta -> mm}}", "in a text cell, shows the live value of an expression", ""),
     ("LaTeX", "\\frac{1}{2} \\sqrt{x}", "\\frac, \\sqrt, \\int, \\sum, \\alpha … are accepted", "\\int_0^1 \\frac{1}{1+x^2} dx"),
 ]
 

@@ -43,7 +43,7 @@ class App:
             if hasattr(self, "worker"):
                 self.worker.restart()
             else:
-                self.worker = EvalWorker(self.module_dirs)
+                self.worker = EvalWorker(self.module_dirs, doc_dirs=[self.worksheets, self.examples])
             self._catalog = self.worker.catalog()
 
     def catalog(self):
@@ -74,15 +74,65 @@ class App:
     def save(self, name, doc):
         self.worksheets.mkdir(parents=True, exist_ok=True)
         p = self._path(name)
-        p.write_text(json.dumps(doc, indent=1))
-        return {"saved": p.name[: -len(EXT)], "path": str(p)}
+        text = json.dumps(doc, indent=1)
+        if p.is_file() and p.read_text() != text:
+            self._keep_version(p)
+        p.write_text(text)
+        return {"saved": p.name[: -len(EXT)], "path": str(p), "saved_at": time.strftime("%Y-%m-%d %H:%M")}
+
+    # -- version history: previous saves live in <worksheets>/.history/<name>/ ---------------
+    def _history_dir(self, name: str) -> Path:
+        return self.worksheets / ".history" / self._path(name).name[: -len(EXT)]
+
+    def _keep_version(self, p: Path, keep: int = 40):
+        d = self._history_dir(p.name[: -len(EXT)])
+        d.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(p.stat().st_mtime))
+        target = d / (stamp + EXT)
+        k = 1
+        while target.exists():
+            target = d / (f"{stamp}-{k}" + EXT)
+            k += 1
+        target.write_text(p.read_text())
+        old = sorted(d.glob("*" + EXT))
+        for extra in old[: max(0, len(old) - keep)]:
+            extra.unlink()
+
+    def history(self, name: str) -> dict:
+        d = self._history_dir(name)
+        versions = []
+        for f in sorted(d.glob("*" + EXT), reverse=True) if d.is_dir() else []:
+            try:
+                doc = json.loads(f.read_text())
+                cells = len(doc.get("cells", []))
+            except (json.JSONDecodeError, AttributeError):
+                cells = None
+            stamp = f.name[: -len(EXT)]
+            t = time.strptime(stamp[:15], "%Y%m%d-%H%M%S")
+            versions.append({"stamp": stamp, "time": time.strftime("%Y-%m-%d %H:%M:%S", t), "cells": cells})
+        return {"versions": versions}
+
+    def version(self, name: str, stamp: str) -> dict:
+        if not re.match(r"^\d{8}-\d{6}(-\d+)?$", stamp):
+            raise ValueError("Bad version.")
+        f = self._history_dir(name) / (stamp + EXT)
+        return json.loads(f.read_text())
+
+    def file_path(self, name: str) -> Path | None:
+        """An uploaded data or image file, for /files/<name>."""
+        if not re.match(r"^[\w][\w\-.]{0,80}$", name) or ".." in name:
+            return None
+        f = self.worksheets / "data" / name
+        return f if f.is_file() else None
 
     def upload(self, filename: str, content_b64: str):
-        """Store a data file (csv, tsv, txt, xlsx) under <worksheets>/data as an identifier-safe name."""
+        """Store a data file (csv, tsv, txt, xlsx) or an image (png, jpg, gif, svg, webp) under <worksheets>/data."""
         stem, dot, ext = filename.rpartition(".")
         ext = ("." + ext.lower()) if dot else ""
-        if ext not in (".csv", ".tsv", ".txt", ".xlsx"):
-            raise ValueError("Only .csv, .tsv, .txt and .xlsx files can be uploaded.")
+        if ext == ".jpeg":
+            ext = ".jpg"
+        if ext not in (".csv", ".tsv", ".txt", ".xlsx", ".png", ".jpg", ".gif", ".svg", ".webp"):
+            raise ValueError("Only .csv, .tsv, .txt, .xlsx and image files (.png, .jpg, .gif, .svg, .webp) can be uploaded.")
         safe = re.sub(r"\W+", "_", stem or "data").strip("_") or "data"
         if safe[0].isdigit():
             safe = "d_" + safe
@@ -92,7 +142,8 @@ class App:
         d = self.worksheets / "data"
         d.mkdir(parents=True, exist_ok=True)
         (d / (safe + ext)).write_bytes(raw)
-        return {"name": safe, "path": str(d / (safe + ext))}
+        return {"name": safe, "file": safe + ext, "path": str(d / (safe + ext)),
+                "image": ext in (".png", ".jpg", ".gif", ".svg", ".webp")}
 
 
 def make_handler(app: App):
@@ -130,6 +181,22 @@ def make_handler(app: App):
                 return self._json(app.catalog())
             if path == "/api/files":
                 return self._json(app.list_files())
+            if path.startswith("/api/history"):
+                from urllib.parse import parse_qs, urlparse
+
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    return self._json(app.history(q.get("name", [""])[0]))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 400)
+            if path.startswith("/files/"):
+                from urllib.parse import unquote
+
+                f = app.file_path(unquote(path[len("/files/"):]))
+                if f is None:
+                    return self._json({"error": "not found"}, 404)
+                ctype = mimetypes.guess_type(str(f))[0] or "application/octet-stream"
+                return self._send(200, f.read_bytes(), ctype)
             if path == "/":
                 path = "/index.html"
             f = (UI_DIR / path.lstrip("/")).resolve()
@@ -158,6 +225,8 @@ def make_handler(app: App):
                     return self._json(app.catalog())
                 if self.path == "/api/upload":
                     return self._json(app.upload(body["filename"], body["content"]))
+                if self.path == "/api/version":
+                    return self._json({"doc": app.version(body["name"], body["stamp"])})
             except FileNotFoundError:
                 return self._json({"error": "No such worksheet."}, 404)
             except (ValueError, KeyError) as exc:

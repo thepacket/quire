@@ -13,12 +13,28 @@ TIMEOUT_MESSAGE = ("This took longer than {s} s and was stopped. Try nsolve or n
                    "answer, or simplify the expression.")
 
 
-def _loop(conn, module_dirs):
+def make_loader(dirs: list[Path]):
+    """name -> (doc, stamp) from the first directory holding <name>.quire.json, else None."""
+    import json
+    import re
+
+    def loader(name: str):
+        if not re.match(r"^[\w][\w \-.]{0,80}$", name):
+            return None
+        for d in dirs:
+            p = Path(d) / (name if name.endswith(".quire.json") else name + ".quire.json")
+            if p.is_file():
+                return json.loads(p.read_text()), p.stat().st_mtime_ns
+        return None
+    return loader
+
+
+def _loop(conn, module_dirs, doc_dirs=()):
     from .evaluator import Evaluator
     from ..modules.registry import load_registry
 
     registry = load_registry([Path(d) for d in module_dirs])
-    ev = Evaluator(registry)
+    ev = Evaluator(registry, loader=make_loader([Path(d) for d in doc_dirs]) if doc_dirs else None)
     while True:
         try:
             msg = conn.recv()
@@ -37,7 +53,7 @@ def _loop(conn, module_dirs):
                 ctype = cell.get("type", "math")
                 cid = cell.get("id")
                 if ctype == "text":
-                    res = {"id": cid, "ok": True}
+                    res = {"id": cid, **ev.evaluate_text(cell.get("source", ""), env)}
                 elif ctype == "plot":
                     res = {"id": cid, **sample_plot(cell, env, ev)}
                 else:
@@ -49,15 +65,16 @@ def _loop(conn, module_dirs):
 
 
 class EvalWorker:
-    def __init__(self, module_dirs: list[Path], timeout: float = 20.0):
+    def __init__(self, module_dirs: list[Path], timeout: float = 20.0, doc_dirs: list[Path] = ()):
         self.module_dirs = [str(d) for d in module_dirs]
+        self.doc_dirs = [str(d) for d in doc_dirs]
         self.timeout = timeout
         self._ctx = mp.get_context("spawn")
         self._start()
 
     def _start(self):
         self.conn, child = self._ctx.Pipe()
-        self.proc = self._ctx.Process(target=_loop, args=(child, self.module_dirs), daemon=True)
+        self.proc = self._ctx.Process(target=_loop, args=(child, self.module_dirs, self.doc_dirs), daemon=True)
         self.proc.start()
         child.close()
 

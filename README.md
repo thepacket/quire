@@ -150,6 +150,26 @@ show each of these.
 Modules can add plot kinds with `api.plot_kind(...)`; the quantum, ode and control modules
 do (see `modules/quantum/module.py` for the shortest example).
 
+## The worksheet as a document
+
+Text cells are Markdown: headings, lists, numbered lists, `> quotes`, tables
+(`| a | b |` with a `|---|---|` line), links, images (`![caption](photo.png)` for a file
+uploaded with **Data**, or any URL), footnotes (`[^1]` in the text, `[^1]: note` on its own
+line), `$inline$` and `$$display$$` math. A value from the worksheet is written as
+`{{expr}}`: "the beam deflects {{delta -> mm}}" shows the live value, converted, and follows
+every change above it.
+
+`import beam` in a math cell brings in every definition of the worksheet saved as "beam"
+(or an example of that name), so a folder of worksheets works as a small library.
+Imports are re-read when the file changes and a worksheet cannot import itself.
+
+The title block at the top opens the **Document** dialog: author, **Export HTML** (one
+self-contained file with the math rendered and the plots as pictures), **Export Markdown**
+(LaTeX math, plots embedded as images), **Print / PDF** (a print stylesheet hides the
+editing chrome; choose "Save as PDF" in the dialog), and the version **history**: every save
+that changes a worksheet keeps the previous version, and each one can be compared cell by
+cell with the current document or restored.
+
 ## Modules
 
 A module is a folder in `modules/` containing `module.py` with a `register(api)`
