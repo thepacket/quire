@@ -182,6 +182,19 @@ Temperatures are absolute: write `from_celsius(25)` for 25 °C and `to_celsius(T
 Rates per second are written `0.1 Hz` or `0.1/second`, because `0.1/s` divides by the
 variable `s`. The "Engineering modules" example has one worked problem per module.
 
+### Science modules
+
+| module | what it carries |
+|---|---|
+| `physics` | projectile and pendulum kinematics; special relativity (`lorentz_factor`, `time_dilation`, `velocity_addition`, relativistic Doppler); optics (`thin_lens_image`, `snell`, `critical_angle`, `brewster_angle`, gratings, Rayleigh limit); electromagnetism (Coulomb, fields of wires and solenoids, Lorentz force, cyclotron frequency); waves and photons (`photon_energy`, `de_broglie`, `wien_peak`, blackbody); nuclear decay (`decay`, `age_from_fraction`, `binding_energy`) |
+| `astronomy` | units and constants (`AU`, `ly`, `pc`, `M_sun`, `M_earth`, `R_earth`, `arcsec`); orbits (`orbital_velocity`, `orbital_period`, `escape_velocity`, `vis_viva`, `hohmann`, `schwarzschild_radius`); magnitudes and distances (`distance_modulus`, `parallax_distance`, `luminosity`, `redshift_velocity`); `julian_date`, `sidereal_time`, `alt_az`, `angular_separation`, `equatorial_to_galactic` |
+| `geodesy` | `haversine` and `vincenty` distances, `bearing`, `destination`, `midpoint`, WGS84 `geodetic_to_ecef` / `ecef_to_geodetic`, `utm` |
+| `quantum` (information) | Kraus channels (`bit_flip`, `phase_flip`, `depolarizing`, `amplitude_damping`, `phase_damping`, `kraus_apply`, `kraus_valid`), `fidelity_mixed`, `trace_distance`, `bloch_mixed`, `concurrence`, `qft`, `grover_iterate`, `teleport_check` |
+
+Angles are degrees unless written with units; `-> deg` and `-> rad` convert results.
+Constants such as `c_light` may be `->` targets, so `velocity_addition(0.5 c_light, 0.5 c_light) -> c_light`
+gives `0.8`. The "Science modules" example has a worked problem for each.
+
 ### Quantum computing (`modules/quantum`)
 
 Symbolic linear algebra over complex Hilbert spaces, in Dirac notation:

@@ -517,6 +517,167 @@ def sample(state, shots=1000, seed=1):
     return sp.ImmutableMatrix([[Ket(_label(i, n)), sp.Integer(c)] for i, c in enumerate(counts) if c])
 
 
+# ---------------------------------------------------------------- quantum information
+def kraus_apply(kraus, rho_or_state, qubit_index=0):
+    """Apply a channel given by Kraus operators: sum K rho K†. Smaller operators act on the given qubit."""
+    rho = _rho(rho_or_state)
+    n = _n(rho)
+    out = sp.zeros(*rho.shape)
+    for K in kraus:
+        K = sp.Matrix(K)
+        if K.shape[0] != rho.shape[0]:
+            k = int(round(math.log2(K.shape[0])))
+            K = sp.Matrix(gate_on(K, n, *range(int(qubit_index), int(qubit_index) + k)))
+        out += K * rho * K.H
+    return sp.ImmutableMatrix(out).applyfunc(sp.simplify)
+
+
+def kraus_valid(kraus):
+    """Do the operators satisfy sum K† K = I (trace preservation)?"""
+    ks = [_real_params(K) for K in kraus]
+    n = ks[0].shape[1]
+    total = sum((K.H * K for K in ks), sp.zeros(n))
+    diff = sp.simplify(total - sp.eye(n))
+    if diff == sp.zeros(n):
+        return True
+    # symbolic probabilities: check at sample values in (0, 1)
+    import random
+
+    syms = sorted(diff.free_symbols, key=lambda s_: s_.name)
+    if not syms:
+        return False
+    rng = random.Random(3)
+    for _ in range(5):
+        point = {s_: sp.Rational(rng.randint(1, 99), 100) for s_ in syms}
+        if any(abs(complex(sp.N(e.subs(point)))) > 1e-10 for e in diff):
+            return False
+    _note("checked at sample values of the parameters in (0, 1)")
+    return True
+
+
+def bit_flip(rho_or_state, p, qubit_index=0):
+    p = sp.sympify(p)
+    return kraus_apply([sp.sqrt(1 - p) * sp.eye(2), sp.sqrt(p) * X], rho_or_state, qubit_index)
+
+
+def phase_flip(rho_or_state, p, qubit_index=0):
+    p = sp.sympify(p)
+    return kraus_apply([sp.sqrt(1 - p) * sp.eye(2), sp.sqrt(p) * Z], rho_or_state, qubit_index)
+
+
+def depolarizing(rho_or_state, p, qubit_index=0):
+    p = sp.sympify(p)
+    return kraus_apply([sp.sqrt(1 - 3 * p / 4) * sp.eye(2), sp.sqrt(p / 4) * X, sp.sqrt(p / 4) * Y, sp.sqrt(p / 4) * Z],
+                       rho_or_state, qubit_index)
+
+
+def amplitude_damping(rho_or_state, gamma, qubit_index=0):
+    g = sp.sympify(gamma)
+    return kraus_apply([_m([[1, 0], [0, sp.sqrt(1 - g)]]), _m([[0, sp.sqrt(g)], [0, 0]])], rho_or_state, qubit_index)
+
+
+def phase_damping(rho_or_state, lam, qubit_index=0):
+    lam = sp.sympify(lam)
+    return kraus_apply([_m([[1, 0], [0, sp.sqrt(1 - lam)]]), _m([[0, 0], [0, sp.sqrt(lam)]])], rho_or_state, qubit_index)
+
+
+def fidelity_mixed(rho, sigma):
+    """Uhlmann fidelity (tr sqrt(sqrt(rho) sigma sqrt(rho)))^2; states or density matrices."""
+    r, s_ = _rho(rho), _rho(sigma)
+    if r.rank() == 1:  # pure rho: <psi|sigma|psi>
+        v = _vec(rho) if not (isinstance(rho, sp.MatrixBase) and rho.shape[0] == rho.shape[1] and rho.shape[0] > 1) else None
+        if v is not None:
+            return sp.simplify((v.H * s_ * v)[0, 0])
+    import numpy as np
+    from scipy.linalg import sqrtm
+
+    R, S = np.array(r.evalf().tolist(), dtype=complex), np.array(s_.evalf().tolist(), dtype=complex)
+    sr = sqrtm(R)
+    val = np.trace(sqrtm(sr @ S @ sr)).real ** 2
+    _note("Uhlmann fidelity evaluated numerically")
+    return sp.Float(float(val))
+
+
+def trace_distance(rho, sigma):
+    d = _rho(rho) - _rho(sigma)
+    eig = d.eigenvals()
+    return sp.simplify(sum(sp.Abs(l) * m for l, m in eig.items()) / 2)
+
+
+def bloch_mixed(rho_or_state):
+    """[x, y, z] Bloch vector of a single-qubit density matrix (length < 1 when mixed)."""
+    rho = _rho(rho_or_state)
+    return [sp.simplify((rho * g).trace()) for g in (X, Y, Z)]
+
+
+def concurrence(rho_or_state):
+    """Wootters concurrence of a two-qubit state: 1 for Bell states, 0 for product states."""
+    import numpy as np
+
+    rho = _rho(rho_or_state)
+    if rho.shape[0] != 4:
+        raise EvalError("concurrence needs a two-qubit state.")
+    R = np.array(rho.evalf().tolist(), dtype=complex)
+    yy = np.kron(np.array([[0, -1j], [1j, 0]]), np.array([[0, -1j], [1j, 0]]))
+    Rt = yy @ R.conj() @ yy
+    eig = np.sort(np.sqrt(np.abs(np.linalg.eigvals(R @ Rt))))[::-1]
+    return sp.Float(max(0.0, eig[0] - eig[1] - eig[2] - eig[3]))
+
+
+def qft(n):
+    """Quantum Fourier transform on n qubits as a unitary matrix."""
+    n = int(n)
+    N = 2 ** n
+    w = sp.exp(2 * sp.pi * sp.I / N)
+    return sp.ImmutableMatrix(N, N, lambda j, k: w ** (j * k) / sp.sqrt(N))
+
+
+def grover_iterate(n, marked, iterations=None):
+    """State after Grover iterations on n qubits with the marked basis states (list of integers)."""
+    n = int(n)
+    N = 2 ** n
+    marked = [int(m) for m in (marked if isinstance(marked, (list, tuple)) else [marked])]
+    if iterations is None:
+        iterations = int(round(sp.pi / 4 * math.sqrt(N / len(marked))))
+    oracle = sp.diag(*[-1 if i in marked else 1 for i in range(N)])
+    s = sp.ImmutableMatrix([1] * N) / sp.sqrt(N)
+    diffuser = 2 * s * s.H - sp.eye(N)
+    v = s
+    for _ in range(int(iterations)):
+        v = diffuser * (oracle * v)
+    v = sp.ImmutableMatrix(v).applyfunc(sp.simplify)
+    p = sp.simplify(sum(sp.Abs(v[m]) ** 2 for m in marked))
+    _note(f"Grover: {int(iterations)} iteration(s); probability of a marked outcome {sp.N(p, 6)}")
+    return to_dirac(v)
+
+
+def grover_iterations(n, n_marked=1):
+    """Optimal number of Grover iterations, round(pi/4 sqrt(N/M))."""
+    return sp.Integer(int(round(sp.pi / 4 * math.sqrt(2 ** int(n) / int(n_marked)))))
+
+
+def teleport_check():
+    """Verify teleportation: Alice's Bell measurement plus Bob's corrections reproduce alpha|0> + beta|1>."""
+    a, b = sp.symbols("alpha beta")
+    psi = qubit(a, b)
+    state = tensor(psi, bell_state(0))            # qubits: 0 = message, 1 = Alice, 2 = Bob
+    state = apply(CNOT, state, 0, 1)
+    state = apply(H, state, 0)
+    v = _vec(state)
+    results = []
+    for m0 in (0, 1):
+        for m1 in (0, 1):
+            proj = [c if _label(i, 3)[0] == str(m0) and _label(i, 3)[1] == str(m1) else 0 for i, c in enumerate(v)]
+            bob = sp.ImmutableMatrix([proj[i] for i in range(8) if _label(i, 3)[:2] == f"{m0}{m1}"]) * 2
+            if m1:
+                bob = X * bob
+            if m0:
+                bob = Z * bob
+            results.append(sp.simplify(bob - sp.ImmutableMatrix([a, b])) == sp.zeros(2, 1))
+    _note("all four measurement outcomes give Bob the original state after the corrections")
+    return all(results)
+
+
 # ---------------------------------------------------------------- registration
 def register(api):
     St = "Quantum states"
@@ -600,6 +761,26 @@ def register(api):
     api.function("uncertainty", uncertainty, signature="uncertainty(A, B, state)",
                  doc="[σ_A σ_B, |<[A,B]>|/2]: Robertson bound", category=Op, example="uncertainty(X, Y, ket(0))")
 
+    QI = "Quantum information"
+    api.function("kraus_apply", kraus_apply, signature="kraus_apply([K1, K2], rho)", doc="channel sum K rho K†", category=QI)
+    api.function("kraus_valid", kraus_valid, signature="kraus_valid([K1, K2])", doc="sum K† K = I ?", category=QI)
+    api.function("bit_flip", bit_flip, signature="bit_flip(rho, p, qubit)", doc="bit-flip channel", category=QI, example="bit_flip(ket(0), 0.1)")
+    api.function("phase_flip", phase_flip, signature="phase_flip(rho, p)", doc="phase-flip channel", category=QI)
+    api.function("depolarizing", depolarizing, signature="depolarizing(rho, p, qubit)", doc="depolarizing channel", category=QI,
+                 example="depolarizing(plus(), p)")
+    api.function("amplitude_damping", amplitude_damping, signature="amplitude_damping(rho, gamma)", doc="energy relaxation", category=QI)
+    api.function("phase_damping", phase_damping, signature="phase_damping(rho, lambda)", doc="dephasing", category=QI)
+    api.function("fidelity_mixed", fidelity_mixed, signature="fidelity_mixed(rho, sigma)", doc="Uhlmann fidelity", category=QI)
+    api.function("trace_distance", trace_distance, signature="trace_distance(rho, sigma)", doc="½ tr|ρ - σ|", category=QI)
+    api.function("bloch_mixed", bloch_mixed, signature="bloch_mixed(rho)", doc="Bloch vector of a density matrix", category=QI,
+                 example="bloch_mixed(depolarizing(ket(0), 0.5))")
+    api.function("concurrence", concurrence, signature="concurrence(rho)", doc="two-qubit entanglement measure", category=QI,
+                 example="concurrence(bell_state(0))")
+    api.function("qft", qft, signature="qft(n)", doc="quantum Fourier transform matrix", category=QI, example="qft(2)")
+    api.function("grover_iterate", grover_iterate, signature="grover_iterate(n, marked, iterations)", doc="Grover search state", category=QI,
+                 example="grover_iterate(3, 5)")
+    api.function("grover_iterations", grover_iterations, signature="grover_iterations(n, n_marked)", doc="optimal iteration count", category=QI)
+    api.function("teleport_check", teleport_check, signature="teleport_check()", doc="verify the teleportation protocol symbolically", category=QI)
     Me = "Measurement"
     api.function("measure", measure, signature="measure(state, q...)",
                  doc="outcome probabilities (Born rule), all or listed qubits", category=Me, example="measure(bell_state(0))")

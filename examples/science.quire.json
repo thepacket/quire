@@ -1,0 +1,30 @@
+{
+ "quire": 1,
+ "title": "Science modules",
+ "cells": [
+  {"type": "text", "source": "# Science worksheets\nPhysics, astronomy, geodesy and quantum information, each with a short worked problem."},
+  {"type": "text", "source": "## Physics: a fast muon\nAt 0.98 c a muon's 2.2 µs lifetime stretches enough to reach the ground."},
+  {"type": "math", "source": "v = 0.98 c_light\ngamma_v = lorentz_factor(v)"},
+  {"type": "math", "source": "tau = 2.2 us\ntime_dilation(tau, v) -> us"},
+  {"type": "math", "source": "v time_dilation(tau, v) -> km"},
+  {"type": "math", "source": "photon_energy(500 nm) -> eV"},
+  {"type": "math", "source": "snell(1, 45, 1.33)"},
+  {"type": "text", "source": "## Astronomy: to geostationary orbit\nA Hohmann transfer from a 400 km parking orbit."},
+  {"type": "math", "source": "r1 = R_earth + 400 km\nr2 = 42164 km"},
+  {"type": "math", "source": "orbital_velocity(M_earth, r1) -> km/s"},
+  {"type": "math", "source": "burns = hohmann(M_earth, r1, r2)"},
+  {"type": "math", "source": "burns[2] -> km/s\nburns[3] -> hour"},
+  {"type": "math", "source": "orbital_period(M_earth, r2) -> hour"},
+  {"type": "math", "source": "parallax_distance(0.768) -> ly"},
+  {"type": "math", "source": "alt_az(20, 45, 30)"},
+  {"type": "text", "source": "## Geodesy: Montreal to London"},
+  {"type": "math", "source": "haversine(45.5, -73.6, 51.5, -0.1) -> km\nvincenty(45.5, -73.6, 51.5, -0.1) -> km"},
+  {"type": "math", "source": "bearing(45.5, -73.6, 51.5, -0.1)"},
+  {"type": "math", "source": "utm(45.5, -73.6)"},
+  {"type": "text", "source": "## Quantum information: noise and search\nA depolarizing channel shrinks the Bloch vector; Grover's search amplifies the marked state."},
+  {"type": "math", "source": "assume p real\nbloch_mixed(depolarizing(ket(0), p))"},
+  {"type": "math", "source": "concurrence(bell_state(0))\nconcurrence(bit_flip(bell_state(0), 0.25))"},
+  {"type": "math", "source": "grover_iterate(3, 5)"},
+  {"type": "math", "source": "teleport_check()"}
+ ]
+}

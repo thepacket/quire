@@ -56,6 +56,15 @@ kWh = _prefixed("kilowatt_hour", "kWh", 3600 * 1000, u.joule)
 tonne = _prefixed("tonne", "t", 1000, u.kilogram)
 rpm = _prefixed("rpm", "rpm", 2 * sp.pi / 60, u.radian / u.second)  # angular rate: 1 rpm = 2π/60 rad/s
 kmh = _prefixed("kilometer_per_hour", "km/h", sp.Rational(1000, 3600), u.meter / u.second)
+mC = _prefixed("millicoulomb", "mC", sp.Rational(1, 1000), u.coulomb)
+uC = _prefixed("microcoulomb", "μC", sp.Rational(1, 10**6), u.coulomb)
+nC = _prefixed("nanocoulomb", "nC", sp.Rational(1, 10**9), u.coulomb)
+pC = _prefixed("picocoulomb", "pC", sp.Rational(1, 10**12), u.coulomb)
+mT = _prefixed("millitesla", "mT", sp.Rational(1, 1000), u.tesla)
+uT = _prefixed("microtesla", "μT", sp.Rational(1, 10**6), u.tesla)
+keV = _prefixed("kiloelectronvolt", "keV", 1000, u.eV)
+MeV = _prefixed("megaelectronvolt", "MeV", 10**6, u.eV)
+GeV = _prefixed("gigaelectronvolt", "GeV", 10**9, u.eV)
 
 # name -> (quantity, description). Names must be valid identifiers.
 UNIT_TABLE: dict[str, tuple[sp.Expr, str]] = {
@@ -73,12 +82,13 @@ UNIT_TABLE: dict[str, tuple[sp.Expr, str]] = {
     "year": (u.year, "year (Julian)"),
     # mass
     "kg": (u.kg, "kilogram"), "g": (u.gram, "gram"), "gram": (u.gram, "gram"), "mg": (u.mg, "milligram"),
-    "ug": (u.ug, "microgram"), "tonne": (tonne, "metric ton"),
+    "ug": (u.ug, "microgram"), "tonne": (tonne, "metric ton"), "amu": (u.amu, "atomic mass unit"),
     "lb": (u.pound, "pound (mass)"), "pound": (u.pound, "pound (mass)"),
     # force, energy, power, pressure
     "N": (u.newton, "newton"), "newton": (u.newton, "newton"), "kN": (kN, "kilonewton"),
     "J": (u.joule, "joule"), "joule": (u.joule, "joule"), "kJ": (kJ, "kilojoule"), "MJ": (MJ, "megajoule"),
-    "eV": (u.eV, "electronvolt"), "kWh": (kWh, "kilowatt-hour"),
+    "eV": (u.eV, "electronvolt"), "keV": (keV, "kiloelectronvolt"), "MeV": (MeV, "megaelectronvolt"),
+    "GeV": (GeV, "gigaelectronvolt"), "kWh": (kWh, "kilowatt-hour"),
     "W": (u.watt, "watt"), "watt": (u.watt, "watt"), "kW": (kW, "kilowatt"), "MW": (MW, "megawatt"),
     "Pa": (u.pascal, "pascal"), "pascal": (u.pascal, "pascal"), "kPa": (kPa, "kilopascal"),
     "MPa": (MPa, "megapascal"), "GPa": (GPa, "gigapascal"),
@@ -93,11 +103,13 @@ UNIT_TABLE: dict[str, tuple[sp.Expr, str]] = {
     "A": (u.ampere, "ampere"), "ampere": (u.ampere, "ampere"), "mA": (mA, "milliampere"),
     "V": (u.volt, "volt"), "volt": (u.volt, "volt"), "kV": (kV, "kilovolt"), "mV": (mV, "millivolt"),
     "ohm": (u.ohm, "ohm"), "kohm": (kohm, "kiloohm"), "Mohm": (Mohm, "megaohm"),
-    "C": (u.coulomb, "coulomb"), "coulomb": (u.coulomb, "coulomb"),
+    "C": (u.coulomb, "coulomb"), "coulomb": (u.coulomb, "coulomb"), "mC": (mC, "millicoulomb"),
+    "uC": (uC, "microcoulomb"), "nC": (nC, "nanocoulomb"), "pC": (pC, "picocoulomb"),
     "F": (u.farad, "farad"), "farad": (u.farad, "farad"), "uF": (uF, "microfarad"),
     "nF": (nF, "nanofarad"), "pF": (pF, "picofarad"),
     "H": (u.henry, "henry"), "henry": (u.henry, "henry"), "mH": (mH, "millihenry"), "uH": (uH, "microhenry"),
-    "T": (u.tesla, "tesla"), "Wb": (u.weber, "weber"), "S": (u.siemens, "siemens"),
+    "T": (u.tesla, "tesla"), "mT": (mT, "millitesla"), "uT": (uT, "microtesla"), "Wb": (u.weber, "weber"),
+    "S": (u.siemens, "siemens"),
     # thermodynamics, amount, light
     "K": (u.kelvin, "kelvin"), "kelvin": (u.kelvin, "kelvin"),
     "mol": (u.mole, "mole"), "mole": (u.mole, "mole"), "cd": (u.candela, "candela"),

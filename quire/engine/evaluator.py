@@ -171,7 +171,9 @@ class Evaluator:
     def __init__(self, registry, digits: int = 6):
         self.registry = registry
         self.base_namespace = registry.namespace()
-        self.units_namespace = {e.name: e.value for m in registry.modules for e in m.entries if e.kind == "unit"}
+        self.units_namespace = {e.name: e.value for m in registry.modules for e in m.entries
+                                if e.kind == "unit" or (e.kind == "constant" and isinstance(e.value, sp.Basic)
+                                                        and U.has_units(e.value))}
         self.unit_names = frozenset(self.units_namespace)
         # Single-letter unit symbols (m, s, g, N, V, ...) collide with the names people give variables.
         # They count as units only in unit position: after a number ("3 m"), or as a "->" target.
