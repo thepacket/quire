@@ -223,6 +223,120 @@ def material_poisson(m):
     return sp.Float(_mat(m)[6])
 
 
+# ---- equilibria, titrations, the periodic table
+class _Curve:
+    """A plottable numeric function of one variable (called with a number or a plot symbol)."""
+
+    def __init__(self, label, fn, var):
+        from sympy.utilities.lambdify import implemented_function
+
+        import numpy as np
+
+        self.label, self.fn, self.var = label, fn, var
+        self.func = implemented_function(label, np.vectorize(fn, otypes=[float]))
+
+    def __call__(self, x):
+        x = sp.sympify(x)
+        if not x.free_symbols:
+            return sp.Float(float(self.fn(float(U.strip_units(x)[0]))), 6)
+        return self.func(x)
+
+    def __repr__(self):
+        return f"{self.label}({self.var})"
+
+
+def equilibrium(K, species):
+    """Equilibrium concentrations from K and rows [initial concentration, stoichiometric coefficient] (reactants negative).
+
+    equilibrium(1.8e-5, [[0.1, -1], [0, 1], [0, 1]]) for HA <-> H+ + A-.
+    """
+    import numpy as np
+
+    rows = species.tolist() if isinstance(species, sp.MatrixBase) else species
+    try:
+        c0 = [float(U.strip_units(sp.sympify(r[0]))[0]) for r in rows]
+        nu = [int(r[1]) for r in rows]
+    except (TypeError, ValueError, IndexError):
+        raise EvalError("species are rows [initial concentration, coefficient], coefficients negative for reactants.") from None
+    Kv = float(U.strip_units(sp.sympify(K))[0])
+    xi = sp.Symbol("xi")
+    expr = sp.Mul(*[(c + n * xi) ** n for c, n in zip(c0, nu)]) - Kv
+    num, den = sp.fraction(sp.together(expr))
+    poly = sp.Poly(sp.expand(num), xi)
+    lo = max([-c / n for c, n in zip(c0, nu) if n > 0] + [-float("inf")])
+    hi = min([c / -n for c, n in zip(c0, nu) if n < 0] + [float("inf")])
+    roots = [complex(r) for r in np.roots([float(c) for c in poly.all_coeffs()])]
+    good = [r.real for r in roots if abs(r.imag) < 1e-9 * max(1, abs(r.real)) and lo - 1e-12 <= r.real <= hi + 1e-12]
+    if not good:
+        raise EvalError("No physical extent of reaction keeps every concentration positive.")
+    x = max(good, key=lambda v: -abs(v))  # the extent closest to the initial state
+    _note(f"extent of reaction ξ = {x:.4g}")
+    return [sp.Float(c + n * x, 6) for c, n in zip(c0, nu)]
+
+
+def titration(c_acid, V_acid, c_base, Ka=None):
+    """pH as a function of the titrant volume for a monoprotic acid titrated with a strong base.
+
+    Ka omitted (or Ka = oo) means a strong acid. Volumes in the units you give: titration(0.1 mol/L, 25 mL, 0.1 mol/L, 1.8e-5) then plot pH(V) for V from 0 to 50.
+    """
+    import numpy as np
+
+    ca = float(U.strip_units(sp.sympify(c_acid))[0])
+    cb = float(U.strip_units(sp.sympify(c_base))[0])
+    va = float(U.strip_units(sp.sympify(V_acid))[0])
+    ka = None if Ka is None or sp.sympify(Ka) == sp.oo else float(sp.sympify(Ka))
+    kw = 1e-14
+
+    def ph(vb):
+        vb = max(float(vb), 0.0)
+        Ca, Cb = ca * va / (va + vb), cb * vb / (va + vb)
+        if ka is None:  # strong acid: h^2 + Cb h - Ca h - kw = 0
+            coeffs = [1, Cb - Ca, -kw]
+        else:  # charge balance h + Cb = kw/h + Ca Ka/(Ka + h)  ->  cubic in h
+            coeffs = [1, Cb + ka, ka * (Cb - Ca) - kw, -kw * ka]
+        roots = np.roots(coeffs)
+        h = max(r.real for r in roots if abs(r.imag) < 1e-12 and r.real > 0)
+        return -np.log10(h)
+
+    _note(f"equivalence at V = {ca * va / cb:.4g} (same volume unit as V_acid)")
+    return _Curve("pH", ph, "V")
+
+
+def equivalence_volume(c_acid, V_acid, c_base):
+    return sp.simplify(sp.sympify(c_acid) * V_acid / c_base)
+
+
+def element(symbol):
+    """Properties of an element as [property, value] rows."""
+    el = _element(symbol)
+    rows = [[sp.Symbol("number"), sp.Integer(el.number)], [sp.Symbol("name"), sp.Symbol(el.name)],
+            [sp.Symbol("mass"), sp.Float(el.mass, 6) * u.gram / u.mole]]
+    if getattr(el, "density", None):
+        rows.append([sp.Symbol("density"), sp.Float(el.density, 5) * u.gram / u.centimeter ** 3])
+    cr = getattr(el, "covalent_radius", None)
+    if cr:
+        rows.append([sp.Symbol("covalent_radius"), sp.Float(cr, 4) * u.angstrom if hasattr(u, "angstrom") else sp.Float(cr, 4)])
+    isotopes = getattr(el, "isotopes", None)
+    if isotopes:
+        stable = [str(i) for i in isotopes if getattr(el[i], "abundance", 0) > 0]
+        rows.append([sp.Symbol("stable_isotopes"), sp.Symbol(",".join(stable)) if stable else sp.S.Zero])
+    return rows
+
+
+def periodic_table(first=1, last=118):
+    """Rows [number, symbol, name, mass] for a range of atomic numbers."""
+    if pt is None:
+        raise EvalError("Chemistry needs the periodictable package.")
+    out = []
+    for z in range(int(first), int(last) + 1):
+        try:
+            el = pt.elements[z]
+        except (KeyError, IndexError):
+            continue
+        out.append([sp.Integer(z), sp.Symbol(el.symbol), sp.Symbol(el.name), sp.Float(el.mass, 6)])
+    return sp.ImmutableMatrix(out)
+
+
 def register(api):
     C = "Chemistry"
     api.function("molar_mass", molar_mass, signature="molar_mass(H2O)", doc="molar mass in g/mol", category=C, example="molar_mass(CaCO3)")
@@ -247,6 +361,13 @@ def register(api):
     api.function("equilibrium_constant", equilibrium_constant, signature="equilibrium_constant(dG, T)", doc="exp(-ΔG/RT)", category=C)
     api.function("nernst", nernst, signature="nernst(E0, n, Q, T)", doc="Nernst equation", category=C)
     api.function("ideal_gas_volume", ideal_gas_volume, signature="ideal_gas_volume(n, T, P)", doc="n R T / P", category=C)
+    api.function("equilibrium", equilibrium, signature="equilibrium(K, [[c0, nu], ...])", doc="equilibrium concentrations from K and initial amounts (nu < 0 for reactants)", category=C,
+                 example="equilibrium(1.8e-5, [[0.1, -1], [0, 1], [0, 1]])")
+    api.function("titration", titration, signature="titration(c_acid, V_acid, c_base, Ka)", doc="pH(V) of a monoprotic acid titrated with strong base (Ka omitted: strong acid)", category=C,
+                 example="titration(0.1, 25, 0.1, 1.8e-5)")
+    api.function("equivalence_volume", equivalence_volume, signature="equivalence_volume(c_acid, V_acid, c_base)", doc="titrant volume at equivalence", category=C)
+    api.function("element", element, signature="element(Fe)", doc="properties of an element as a table", category=C, example="element(Fe)")
+    api.function("periodic_table", periodic_table, signature="periodic_table(first, last)", doc="[number, symbol, name, mass] rows", category=C, example="periodic_table(1, 18)")
     M = "Materials"
     for name in MATERIALS:
         api.constant(name, sp.Symbol(name), doc="material token", category=M)

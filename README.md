@@ -354,6 +354,27 @@ Amplitudes may be symbols: `measure(qubit(alpha, beta))` gives `|α|²` and `|β
 interference. Because `beta`, `gamma`, `zeta` are also function names and `lambda` is a
 Python keyword, the parser treats them as variables unless followed by `(`.
 
+### Applied modules
+
+- **structural**: `truss(nodes, members, supports, loads)` by the method of joints and
+  `frame(..., E, A, I)` by the direct stiffness method, with `truss_forces`, `truss_reactions`,
+  `frame_displacements`, `frame_end_forces`, and a *structure* plot kind that draws the result.
+- **chemistry** additions: `equilibrium(K, [[c0, nu], ...])`, `titration(...)` giving a pH curve you
+  can plot, `equivalence_volume`, `element(Fe)`, `periodic_table(1, 18)`.
+- **biomed**: IV and oral pharmacokinetics, dosing (loading, maintenance, accumulation,
+  Cockcroft-Gault, BMI, body surface area, Clark's rule), logistic and exponential growth,
+  Lotka-Volterra and SIR tables, R0, herd immunity, final size, Michaelis-Menten and Hill.
+- **acoustics**: notes and MIDI, cents, equal, just and Pythagorean tuning, scales, speed of sound,
+  room modes, Schroeder frequency, Sabine reverberation, sound levels, A-weighting, biquad filters,
+  `apply_filter`, `filter_response`, `audio_spectrum`, `dominant_frequencies`, `tone`.
+- **earth**: Manning velocity and flow, Froude, critical depth, rational and SCS runoff, Kirpich,
+  Darcy, Hargreaves; the standard atmosphere to 32 km, pressure altitude, humidity, heat index,
+  wind chill; moment magnitude and seismic moment, energy, local magnitude, S-P distance,
+  Gutenberg-Richter counts and return periods.
+- **ml**: `multi_regression`, `logistic_regression`, `kmeans` and `kmeans_labels`, `pca`,
+  `pca_transform`, `explained_variance`, `knn_predict`, `accuracy`, `confusion_matrix`,
+  `r2_score`, `rmse`, `standardize`, `train_test_split`, on lists or `read_csv` tables.
+
 ### Backends
 
 A module can also register a *fallback* for an operation:

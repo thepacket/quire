@@ -82,7 +82,7 @@ def sample_plot(cell: dict, env: dict, ev) -> dict:
         res["kind"] = kind
         res["renderer"] = spec["renderer"]
         if spec["annot"] and (cell.get("annot") or "").strip() and res.get("series"):
-            res["annotations"] = annotations(cell["annot"], env, ev, res)
+            res["annotations"] = list(res.get("annotations") or []) + annotations(cell["annot"], env, ev, res)
         return res
     except QuireError as exc:
         return {"ok": False, "error": str(exc)}

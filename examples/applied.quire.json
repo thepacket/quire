@@ -1,0 +1,126 @@
+{
+ "quire": 1,
+ "title": "Applied modules",
+ "cells": [
+  {
+   "type": "text",
+   "source": "# Applied modules\nSix more modules: **structural** (trusses and frames, drawn), **chemistry** additions (equilibria, titration curves, the periodic table), **biomed** (pharmacokinetics, epidemics), **acoustics** (tuning, rooms, audio filters), **earth** (hydrology, atmosphere, seismology) and **ml** (regression, k-means, PCA on tables)."
+  },
+  {
+   "type": "text",
+   "source": "## A truss and a portal frame\nNodes are numbered from 1. Member forces are positive in tension; the drawing colours compression blue and tension red."
+  },
+  {
+   "type": "math",
+   "source": "P = slider(10, 1, 30, 1)\nT = truss([[0, 0], [4 m, 0], [8 m, 0], [2 m, 3 m], [6 m, 3 m]], [[1, 2], [2, 3], [1, 4], [4, 2], [2, 5], [5, 3], [4, 5]], [[1, pin], [3, roller]], [[4, 0, -P kN], [5, 0, -P kN]])"
+  },
+  {
+   "type": "plot",
+   "kind": "structure",
+   "exprs": "T"
+  },
+  {
+   "type": "math",
+   "source": "truss_forces(T) -> kN\ntruss_reactions(T)"
+  },
+  {
+   "type": "math",
+   "source": "Fr = frame([[0, 0], [0, 3 m], [5 m, 3 m], [5 m, 0]], [[1, 2], [2, 3], [3, 4]], [[1, fixed], [4, pin]], [[2, 20 kN, 0, 0], [3, 0, -30 kN, 0]], 200 GPa, 0.008 m^2, 1.5e-5 m^4)"
+  },
+  {
+   "type": "plot",
+   "kind": "structure",
+   "exprs": "Fr"
+  },
+  {
+   "type": "math",
+   "source": "frame_displacements(Fr)"
+  },
+  {
+   "type": "text",
+   "source": "## Chemistry: a titration curve and an equilibrium\nAcetic acid (Ka = 1.8·10⁻⁵) titrated with sodium hydroxide; the curve is a function you can plot and evaluate."
+  },
+  {
+   "type": "math",
+   "source": "pHc = titration(0.1 mol/L, 25 mL, 0.1 mol/L, 1.8e-5)\npHc(12.5)\npHc(25)"
+  },
+  {
+   "type": "plot",
+   "kind": "function",
+   "exprs": "pHc(V)",
+   "var": "V",
+   "xmin": "0",
+   "xmax": "50",
+   "annot": "vline(25, \"equivalence\"), hline(7)"
+  },
+  {
+   "type": "math",
+   "source": "equilibrium(1.8e-5, [[0.1, -1], [0, 1], [0, 1]])\nelement(Fe)"
+  },
+  {
+   "type": "text",
+   "source": "## Pharmacokinetics and an epidemic"
+  },
+  {
+   "type": "math",
+   "source": "C(t) = pk_oral(500 mg, 0.8, 40 L, 1.2/hr, 0.1/hr, t) -> mg/L\npeak_time_oral(1.2/hr, 0.1/hr) -> hr"
+  },
+  {
+   "type": "plot",
+   "kind": "function",
+   "exprs": "C(t)",
+   "var": "t",
+   "xmin": "0 hr",
+   "xmax": "48 hr"
+  },
+  {
+   "type": "math",
+   "source": "S = sir_model(0.5, 0.2, 990, 10, 0, 60)\ndays = table_column(S, 1)\ninfected = table_column(S, 3)"
+  },
+  {
+   "type": "plot",
+   "kind": "scatter",
+   "exprs": "days",
+   "expr2": "infected"
+  },
+  {
+   "type": "text",
+   "source": "## Music and rooms"
+  },
+  {
+   "type": "math",
+   "source": "scale(A3, minor)\ncents(1, 5/4)\nroom_modes(5 m, 4 m, 2.7 m, 6)\nsabine_rt60(54 m^3, 12 m^2)"
+  },
+  {
+   "type": "math",
+   "source": "b = biquad(lowpass, 1 kHz, 44.1 kHz)\nR = filter_response(b, 44.1 kHz, 200)"
+  },
+  {
+   "type": "plot",
+   "kind": "scatter",
+   "exprs": "table_column(R, 1)",
+   "expr2": "table_column(R, 2)",
+   "logx": true
+  },
+  {
+   "type": "text",
+   "source": "## Earth"
+  },
+  {
+   "type": "math",
+   "source": "isa_pressure(3000 m) -> kPa\nmanning_flow(0.013, 3 m^2, 0.6 m, 0.001)\nscs_runoff(80 mm, 75)\nmoment_magnitude(1e20 N m)\nepicentral_distance(30 s) -> km"
+  },
+  {
+   "type": "text",
+   "source": "## Machine learning on a table\nSame functions work on `read_csv(file)`."
+  },
+  {
+   "type": "math",
+   "source": "X = [[1, 1], [1.2, 0.8], [0.9, 1.1], [8, 8], [8.2, 7.9], [7.8, 8.1], [4, 5]]\nC = kmeans(X, 2)\nkmeans_labels(X, C)\npca(X, 1)"
+  },
+  {
+   "type": "math",
+   "source": "w = logistic_regression([[1], [2], [3], [6], [7], [8]], [0, 0, 0, 1, 1, 1])\nlogistic_predict(w, [4.5])"
+  }
+ ]
+}
