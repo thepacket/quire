@@ -14,6 +14,9 @@ primary_region = 'yyz'
   QUIRE_HOST = '0.0.0.0'
   QUIRE_WORKSHEETS = '/data/worksheets'
 
+# With object storage (`fly storage create`, which sets BUCKET_NAME and the AWS_* variables as
+# secrets) the worksheet folder is mirrored to the bucket and this volume is no longer needed:
+# remove the [mounts] section and the app runs stateless, on any host.
 [[mounts]]
   source = 'quire_data'
   destination = '/data'

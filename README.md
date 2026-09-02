@@ -170,6 +170,31 @@ editing chrome; choose "Save as PDF" in the dialog), and the version **history**
 that changes a worksheet keeps the previous version, and each one can be compared cell by
 cell with the current document or restored.
 
+## Sharing, storage and platforms
+
+**Read-only links.** In the **Document** dialog of a saved worksheet, *Create read-only
+link* gives a URL such as `/s/k3Jd…` that works without the password. Whoever opens it sees
+the worksheet as last saved, can drag its sliders and zoom its plots, and the numbers follow;
+the server only ever applies slider values and plot ranges to the saved copy, so nothing
+else can be changed or run through the link. *Stop sharing* revokes it.
+
+**Object storage.** Set a bucket and the worksheet folder is mirrored to it: every save,
+version and upload is copied up, and a machine that starts with an empty disk pulls the
+folder down first. On Fly.io, `fly storage create` makes a Tigris bucket and sets the
+variables Quire reads (`BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+`AWS_ENDPOINT_URL_S3`, `AWS_REGION`); any S3-compatible bucket works the same way
+(`QUIRE_S3_BUCKET` and `AWS_ENDPOINT_URL` if the names differ, `QUIRE_S3_PREFIX` for the
+key prefix). With a bucket the `[mounts]` section of `fly.toml` can go, and the app runs
+stateless. No client library is needed: signing is done in `quire/storage.py`.
+
+**Desktop.** `pip install 'quire[desktop]'` then `quire-desktop` opens Quire in its own
+window (pywebview) with the server on a local port; worksheets go to `~/Quire` unless
+`--dir` says otherwise.
+
+**Tablets.** The layout adapts below 900 px: the reference panel slides over the page, the
+cell tools stay visible on touch screens, and on a plot one finger reads values and pans,
+two fingers pinch to zoom, a double tap resets the view.
+
 ## Modules
 
 A module is a folder in `modules/` containing `module.py` with a `register(api)`

@@ -86,10 +86,10 @@ class EvalWorker:
             pass
         self._start()
 
-    def _recv(self):
+    def _recv(self, timeout: float | None = None):
         """Receive one message, or None on timeout / worker death (worker is restarted)."""
         try:
-            if self.conn.poll(self.timeout):
+            if self.conn.poll(self.timeout if timeout is None else timeout):
                 return self.conn.recv()
             self.restart()
         except (EOFError, OSError):
@@ -98,7 +98,7 @@ class EvalWorker:
 
     def catalog(self) -> dict:
         self.conn.send(("catalog",))
-        cat = self._recv()
+        cat = self._recv(max(self.timeout, 60.0))  # the first answer includes loading every module
         return cat if cat is not None else {"modules": [], "entries": [], "error": "The evaluation worker did not start."}
 
     def evaluate(self, cells: list[dict]) -> list[dict]:

@@ -199,3 +199,39 @@ pre.diff .add { color: #1f7a4f; background: #e6f6ee; display: block; } pre.diff 
   .md, .out { display: block !important; }
   svg.plot, .plotly-box { max-width: 100%; }
 }
+
+/* read-only share links */
+.shared-badge { display: none; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 1px 8px; }
+body.shared .shared-badge { display: inline-block; }
+body.shared #btn-new, body.shared #btn-open, body.shared #btn-save, body.shared #btn-saveas, body.shared #btn-examples, body.shared #btn-data,
+body.shared #btn-doc, body.shared #btn-palette, body.shared .tools, body.shared .adder, body.shared .add-end, body.shared #dirty { display: none !important; }
+body.shared .titleblock { cursor: default; } body.shared .titleblock:hover h1 { color: inherit; }
+body.shared textarea.src { background: #fbfaf7; color: #4b5563; }
+body.shared .plot-form input, body.shared .annot-wrap input { background: #fbfaf7; color: #4b5563; }
+.share-row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+.share-row input.name { flex: 1; margin: 0; font-family: var(--mono); font-size: 12.5px; }
+
+/* tablets and phones: room for fingers, panels that do not squeeze the page */
+@media (max-width: 900px) {
+  .topbar { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+  .topbar .title { min-width: 140px; flex: 1 1 160px; }
+  .topbar button { padding: 6px 10px; }
+  main { padding: 16px 8px 120px; }
+  .cell { grid-template-columns: 20px 1fr 76px; gap: 6px; }
+  .titleblock { padding-left: 23px; }
+  .adder { left: 26px; }
+  .ref { position: fixed; right: 0; top: 0; bottom: 0; width: min(360px, 92vw); z-index: 12; box-shadow: -8px 0 30px rgba(0,0,0,.15); }
+  .plot-form input.exprs { min-width: 160px; }
+  .slider-row input[type=range] { width: 100%; max-width: 420px; }
+  .ac { max-width: 92vw; }
+}
+@media (hover: none) and (pointer: coarse) {
+  .tools, .cell .adder { opacity: 1; display: flex; }
+  .tools button, .adder button { padding: 6px 10px; font-size: 13px; }
+  textarea.src, .plot-form input, .annot-wrap input, .title { font-size: 16px; } /* no zoom-on-focus on iOS */
+  .slider-row input[type=range] { height: 32px; }
+  .plot-form select.kind { padding: 6px 8px; font-size: 14px; }
+  svg.plot { touch-action: none; }
+  .legend .lg { padding: 4px 0; }
+  .ref-item { padding: 9px 12px; }
+}

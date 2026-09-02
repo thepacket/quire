@@ -21,7 +21,14 @@ def main():
     args = ap.parse_args()
     module_dirs = [ROOT / "modules"] + (args.modules or [])
     os.environ["QUIRE_WORKSHEETS"] = str(args.dir)  # modules that read data files look here
-    app = App(args.dir, module_dirs, ROOT / "examples", password=args.password)
+    from .storage import StorageError, mirror_from_env
+
+    try:
+        mirror = mirror_from_env(args.dir)
+    except StorageError as exc:
+        print(f"warning: {exc}; worksheets stay on the local disk only")
+        mirror = None
+    app = App(args.dir, module_dirs, ROOT / "examples", password=args.password, mirror=mirror)
     serve(app, args.host, args.port, not args.no_browser and args.host in ("127.0.0.1", "localhost"))
 
 

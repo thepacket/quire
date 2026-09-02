@@ -77,6 +77,7 @@ def _app(tmp_path) -> App:
     app = App.__new__(App)  # no worker process: only the file side is exercised
     app.worksheets = tmp_path / "ws"
     app.examples = ROOT / "examples"
+    app.mirror = app.mirror_error = None
     return app
 
 

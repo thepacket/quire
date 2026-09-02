@@ -7,9 +7,11 @@ dependencies = ["sympy>=1.13", "numpy>=1.26", "scipy>=1.12", "CoolProp>=6.6", "p
 
 [project.optional-dependencies]
 dev = ["pytest"]
+desktop = ["pywebview>=5"]
 
 [project.scripts]
 quire = "quire.__main__:main"
+quire-desktop = "quire.desktop:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -20,6 +20,7 @@ const state = {
   activeInput: null,
   evalTimer: null,
   evalSeq: 0,
+  share: null,   // token when viewing a read-only share link
 };
 
 // ---------- KaTeX helpers ----------
@@ -34,7 +35,7 @@ function katexHtml(latex, display = false) {
 // ---------- Markdown (headings, lists, tables, quotes, images, links, footnotes, $math$, $$display$$, {{values}}) ----------
 function imgSrc(src) {
   if (/^(https?:)?\/\//i.test(src) || /^data:image\//i.test(src)) return src;
-  return "/files/" + src.replace(/^\/files\//, "");
+  return "/files/" + src.replace(/^\/files\//, "") + (state.share ? "?share=" + encodeURIComponent(state.share) : "");
 }
 function renderValue(ctx) {
   const v = ctx.values ? ctx.values[ctx.k] : null;
@@ -120,7 +121,7 @@ function serialize() {
 }
 function renderTitleBlock() {
   $("#tb-title").textContent = state.title || "Untitled";
-  $("#tb-meta").textContent = [state.author, state.savedAt ? "saved " + state.savedAt : ""].filter(Boolean).join(" · ");
+  $("#tb-meta").textContent = [state.author, state.share ? "shared read-only copy" : state.savedAt ? "saved " + state.savedAt : ""].filter(Boolean).join(" · ");
 }
 function loadDoc(doc, fileName = null) {
   state.title = doc.title || "Untitled";
@@ -140,6 +141,7 @@ function loadDoc(doc, fileName = null) {
 }
 function setDirty(v) { state.dirty = v; $("#dirty").classList.toggle("on", v); saveDraft(); }
 function saveDraft() {
+  if (state.share) return;
   try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ doc: serialize(), fileName: state.fileName })); } catch (e) { /* ignore */ }
 }
 function touch() { setDirty(true); scheduleEval(); }
@@ -209,6 +211,7 @@ function buildMath(cell, body) {
     <div class="out"></div><div class="warn"></div><div class="err"></div><div class="meta"></div>`;
   const ta = $("textarea", body);
   ta.value = cell.source || "";
+  if (state.share) ta.readOnly = true;
   body.parentElement.dataset.src = cell.source || "";  // shown instead of the textarea when printing
   ta.addEventListener("input", () => { cell.source = ta.value; body.parentElement.dataset.src = ta.value; autogrow(ta); touch(); acShow(ta); });
   ta.addEventListener("keydown", ev => { if (acKey(ev)) return; keyNav(cell, ta, ev); });
@@ -221,6 +224,7 @@ function buildText(cell, body) {
   body.innerHTML = `<textarea class="src" rows="1" spellcheck="true" placeholder="Write text. *italic*, **bold**, # heading, $x^2$ for math."></textarea><div class="md"></div>`;
   const ta = $("textarea", body), md = $(".md", body);
   ta.value = cell.source || "";
+  if (state.share) ta.readOnly = true;
   const show = () => {
     if (document.activeElement === ta) return;
     const res = state.results.get(cell.id) || {};
@@ -228,7 +232,7 @@ function buildText(cell, body) {
     md.style.display = ""; ta.style.display = "none";
   };
   body._show = show;
-  const edit = () => { md.style.display = "none"; ta.style.display = ""; autogrow(ta); ta.focus(); };
+  const edit = () => { if (state.share) return; md.style.display = "none"; ta.style.display = ""; autogrow(ta); ta.focus(); };
   ta.addEventListener("input", () => { cell.source = ta.value; autogrow(ta); setDirty(true); if (/\{\{/.test(ta.value)) scheduleEval(); });
   ta.addEventListener("blur", show);
   ta.addEventListener("keydown", ev => {
@@ -296,6 +300,7 @@ function buildPlot(cell, body) {
   for (const key of ["exprs", "expr2", "expr3", "xmin", "xmax", "ymin", "ymax", "var", "samples", "annot"]) {
     const inp = $(`input.${key}`, body);
     inp.value = cell[key] || "";
+    if (state.share) inp.readOnly = true;
     inp.addEventListener("input", () => { cell[key] = inp.value; touch(); });
     inp.addEventListener("focus", () => { state.activeInput = inp; });
     inp.addEventListener("keydown", ev => { if (ev.key === "Enter") evaluateNow(); if (ev.key === "Escape") inp.blur(); });
@@ -305,6 +310,7 @@ function buildPlot(cell, body) {
     box.checked = !!cell[key];
     box.addEventListener("change", () => { cell[key] = box.checked; setDirty(true); const r = state.results.get(cell.id); if (r) drawPlot(state.els.get(cell.id), r); });
   }
+  if (state.share) $("select.kind", body).disabled = true;
   $("select.kind", body).addEventListener("change", ev => {
     cell.kind = ev.target.value;
     buildPlot(cell, body);
@@ -380,13 +386,24 @@ function scheduleEval() {
   clearTimeout(state.evalTimer);
   state.evalTimer = setTimeout(evaluateNow, 220);
 }
+function sharedRequest() {
+  const sliders = {}, plots = {};
+  for (const sl of document.querySelectorAll("input.slider")) {
+    const cellEl = sl.closest(".cell"); if (!cellEl) continue;
+    (sliders[cellEl.dataset.id] = sliders[cellEl.dataset.id] || {})[sl.dataset.line] = +sl.value;
+  }
+  for (const c of state.cells) if (c.type === "plot") plots[c.id] = { xmin: c.xmin || "", xmax: c.xmax || "", ymin: c.ymin || "", ymax: c.ymax || "" };
+  return { sliders, plots };
+}
 async function evaluateNow() {
   clearTimeout(state.evalTimer);
   const seq = ++state.evalSeq;
   const cells = state.cells;
   let data;
   try {
-    const r = await fetch("/api/eval", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cells }) });
+    const r = state.share
+      ? await fetch(`/api/shared/${encodeURIComponent(state.share)}/eval`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sharedRequest()) })
+      : await fetch("/api/eval", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cells }) });
     data = await r.json();
   } catch (e) {
     status(`<span class="bad">Cannot reach the Quire server. Is it still running?</span>`); return;
@@ -423,7 +440,7 @@ function renderResult(res) {
       const notes = (o.notes || []).map(n => `<div class="note">${esc(n)}</div>`).join("");
       const reading = o.reading ? `<div class="reading"><span class="lbl">read as</span>${katexHtml(o.reading)}</div>` : "";
       const steps = o.steps ? `<div class="steps">${o.steps_title ? `<div class="steps-title">${esc(o.steps_title)}</div>` : ""}${o.steps.map((st, i) => `<div class="step"><span class="step-n">${i + 1}.</span><span class="step-text">${esc(st.text)}</span>${st.latex ? `<span class="step-math">${katexHtml(st.latex)}</span>` : ""}</div>`).join("")}</div>` : "";
-      const sl = o.slider ? `<div class="slider-row"><input type="range" class="slider" data-line="${o.slider.line}" data-name="${esc(o.slider.name || "")}" min="${o.slider.min}" max="${o.slider.max}" step="${o.slider.step || (o.slider.max - o.slider.min) / 200}" value="${o.slider.value}"><span class="slider-val">${fmtVal(o.slider.value)}</span></div>` : "";
+      const sl = o.slider ? `<div class="slider-row"><input type="range" class="slider" autocomplete="off" data-line="${o.slider.line}" data-name="${esc(o.slider.name || "")}" min="${o.slider.min}" max="${o.slider.max}" step="${o.slider.step || (o.slider.max - o.slider.min) / 200}" value="${o.slider.value}"><span class="slider-val">${fmtVal(o.slider.value)}</span></div>` : "";
       return `${reading}${steps}<div class="out-line">${h}</div>${sl}${notes}`;
     }).join("");
     for (const sl of out.querySelectorAll("input.slider")) sl.addEventListener("input", () => onSlider(cell, el, sl));
@@ -729,6 +746,28 @@ function attachPlotInteraction(svg, el, cell, res, geo, view, offset) {
   };
   svg.ondblclick = () => { if (cell._orig) { cell.xmin = cell._orig.xmin; cell.xmax = cell._orig.xmax; $("input.xmin", el).value = cell.xmin; $("input.xmax", el).value = cell.xmax; touch(); } };
   if (!cell._orig) cell._orig = { xmin: cell.xmin, xmax: cell.xmax };
+  // touch: one finger shows the readout and pans, two fingers pinch to zoom, double tap resets
+  const asMouse = t => ({ clientX: t.clientX, clientY: t.clientY, preventDefault() {} });
+  let pinch = null, lastTap = 0;
+  svg.ontouchstart = ev => {
+    if (ev.touches.length === 2) { const [a, b] = ev.touches; pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), lo: geo.ix(geo.ml), hi: geo.ix(geo.W - geo.mr), mid: geo.ix(toSvg(asMouse({ clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2 })).px) }; ev.preventDefault(); return; }
+    if (ev.touches.length !== 1) return;
+    const now = Date.now();
+    if (now - lastTap < 350) { svg.ondblclick(); lastTap = 0; return; }
+    lastTap = now;
+    svg.onmousemove(asMouse(ev.touches[0]));
+    svg.onmousedown(asMouse(ev.touches[0]));
+  };
+  svg.ontouchmove = ev => {
+    if (pinch && ev.touches.length === 2) {
+      const [a, b] = ev.touches, d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1, f = pinch.d / d;
+      setRange(pinch.mid - (pinch.mid - pinch.lo) * f, pinch.mid + (pinch.hi - pinch.mid) * f);
+      pinch.d = d; pinch.lo = pinch.mid - (pinch.mid - pinch.lo) * f; pinch.hi = pinch.mid + (pinch.hi - pinch.mid) * f;
+      ev.preventDefault(); return;
+    }
+    if (ev.touches.length === 1) { svg.onmousemove(asMouse(ev.touches[0])); if (drag) ev.preventDefault(); }
+  };
+  svg.ontouchend = ev => { if (pinch) { pinch = null; return; } if (ev.changedTouches.length) svg.onmouseup(asMouse(ev.changedTouches[0])); };
 }
 
 // ---------- Plotting (Plotly, loaded on first use: contour, heatmap, surfaces, 3D) ----------
@@ -994,6 +1033,13 @@ function diffHtml(oldDoc, newDoc) {
   if (!rows.length) return `<div class="hint">No differences in the cells.</div>`;
   return rows.map(r => `<div class="dcell ${r.st}"><div class="dhead">${r.type} cell · ${r.st}</div><pre class="diff">${r.text.map(([k, l]) => `<span class="${k === "+" ? "add" : k === "-" ? "del" : "same"}">${k} ${esc(l)}</span>`).join("")}</pre></div>`).join("");
 }
+function renderShare(token) {
+  const box = $("#doc-share"); if (!box) return;
+  if (!token) { box.innerHTML = `<button data-do="share">Create read-only link</button> <span class="hint">Anyone with the link sees the saved worksheet and can move its sliders; nothing else changes.</span>`; return; }
+  const url = location.origin + "/s/" + token;
+  box.innerHTML = `<div class="share-row"><input id="share-url" class="name" readonly value="${esc(url)}"><button data-do="copy">copy</button><button data-do="unshare" title="The link stops working">stop sharing</button></div>
+    <span class="hint">The link shows the version last saved; save again to update it.</span>`;
+}
 async function documentDialog() {
   modal("Document", `
     <label class="row"><span>Author</span><input id="doc-author" class="name" value="${esc(state.author || "")}" placeholder="shown in the title block and exports"></label>
@@ -1003,6 +1049,7 @@ async function documentDialog() {
       <button data-do="md" title="Markdown with LaTeX math; plots embedded as images">Export Markdown</button>
       <button data-do="print" title="Print, or save as PDF from the print dialog">Print / PDF</button>
     </div>
+    <h4>Share</h4><div id="doc-share" class="hint">${state.fileName ? "Loading…" : "Save the worksheet first to share a read-only link."}</div>
     <h4>History</h4><div id="doc-history" class="hint">${state.fileName ? "Loading…" : ""}</div><div id="doc-diff"></div>`);
   const author = $("#doc-author");
   author.addEventListener("input", () => { state.author = author.value; setDirty(true); renderTitleBlock(); });
@@ -1011,6 +1058,9 @@ async function documentDialog() {
     if (b.dataset.do === "html") exportHtml();
     if (b.dataset.do === "md") exportMarkdown();
     if (b.dataset.do === "print") { closeModal(); setTimeout(() => window.print(), 150); }
+    if (b.dataset.do === "share") { try { const r = await api("/api/share", { name: state.fileName }); renderShare(r.token); } catch (e) { alert(e.message); } }
+    if (b.dataset.do === "unshare") { try { await api("/api/unshare", { name: state.fileName }); renderShare(null); } catch (e) { alert(e.message); } }
+    if (b.dataset.do === "copy") { try { await navigator.clipboard.writeText($("#share-url").value); b.textContent = "copied"; } catch (e) { $("#share-url").select(); } }
     if (b.dataset.diff) {
       try {
         const { doc } = await api("/api/version", { name: state.fileName, stamp: b.dataset.diff });
@@ -1029,6 +1079,7 @@ async function documentDialog() {
   if (!state.fileName) return;
   try {
     const r = await fetch("/api/history?name=" + encodeURIComponent(state.fileName)); const h = await r.json();
+    renderShare(h.share || null);
     const list = $("#doc-history"); if (!list) return;
     list.innerHTML = h.versions && h.versions.length
       ? h.versions.map(v => `<div class="ver"><span>${esc(v.time)}</span><span class="hint">${v.cells == null ? "" : v.cells + " cells"}</span><button data-diff="${esc(v.stamp)}" data-time="${esc(v.time)}">compare</button><button data-restore="${esc(v.stamp)}" data-time="${esc(v.time)}">restore</button></div>`).join("")
@@ -1073,7 +1124,7 @@ async function save(as = false) {
   try {
     const r = await api("/api/save", { name, doc: serialize() });
     state.fileName = r.saved; state.savedAt = r.saved_at || state.savedAt; setDirty(false); renderTitleBlock();
-    status(`Saved to ${esc(r.path)}`);
+    status(r.warning ? `Saved to ${esc(r.path)} · <span class="bad">${esc(r.warning)}</span>` : `Saved to ${esc(r.path)}`);
   } catch (e) { alert(e.message); }
 }
 
@@ -1237,6 +1288,20 @@ function init() {
   });
   window.addEventListener("beforeunload", ev => { if (state.dirty) { ev.preventDefault(); ev.returnValue = ""; } });
 
+  const shared = /^\/s\/([\w-]+)/.exec(location.pathname);
+  if (shared) {
+    state.share = shared[1];
+    document.body.classList.add("shared");
+    $("#title").readOnly = true;
+    $("#titleblock").onclick = null;
+    loadCatalog();
+    fetch(`/api/shared/${encodeURIComponent(state.share)}`).then(r => r.json()).then(d => {
+      if (!d.doc) { status(`<span class="bad">${esc(d.error || "This link is no longer shared.")}</span>`); return; }
+      loadDoc(d.doc);
+      $("#tb-meta").textContent = [d.doc.author, "shared read-only copy"].filter(Boolean).join(" · ");
+    }).catch(() => status(`<span class="bad">Cannot reach the Quire server.</span>`));
+    return;
+  }
   loadCatalog();
   let draft = null;
   try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch (e) { /* ignore */ }
