@@ -54,7 +54,7 @@ uH = _prefixed("microhenry", "μH", sp.Rational(1, 10**6), u.henry)
 mL = _prefixed("milliliter", "mL", sp.Rational(1, 1000), u.liter)
 kWh = _prefixed("kilowatt_hour", "kWh", 3600 * 1000, u.joule)
 tonne = _prefixed("tonne", "t", 1000, u.kilogram)
-rpm = _prefixed("rpm", "rpm", sp.Rational(1, 60), u.hertz)
+rpm = _prefixed("rpm", "rpm", 2 * sp.pi / 60, u.radian / u.second)  # angular rate: 1 rpm = 2π/60 rad/s
 kmh = _prefixed("kilometer_per_hour", "km/h", sp.Rational(1000, 3600), u.meter / u.second)
 
 # name -> (quantity, description). Names must be valid identifiers.
@@ -86,7 +86,7 @@ UNIT_TABLE: dict[str, tuple[sp.Expr, str]] = {
     "mmHg": (u.mmHg, "millimeter of mercury"),
     # frequency, angle
     "Hz": (u.hertz, "hertz"), "hertz": (u.hertz, "hertz"), "kHz": (kHz, "kilohertz"),
-    "MHz": (MHz, "megahertz"), "GHz": (GHz, "gigahertz"), "rpm": (rpm, "revolutions per minute"),
+    "MHz": (MHz, "megahertz"), "GHz": (GHz, "gigahertz"), "rpm": (rpm, "revolutions per minute (angular rate, 2π/60 rad/s)"),
     "rad": (u.radian, "radian"), "radian": (u.radian, "radian"),
     "deg": (u.degree, "degree of arc"), "degree": (u.degree, "degree of arc"),
     # electrical
