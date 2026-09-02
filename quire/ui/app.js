@@ -58,8 +58,8 @@ function inlineMd(s, ctx = {}) {
     return h;
   }).join("");
 }
-function markdown(text, ctx = {}) {
-  ctx.k = 0;
+function markdown(text, ctx = {}, nested = false) {
+  if (!nested) ctx.k = 0;
   const lines = text.split("\n"), out = [], foot = [];
   let para = [], list = null, quote = [];
   const flush = () => {
@@ -74,6 +74,14 @@ function markdown(text, ctx = {}) {
       let buf = t;
       if (!(t.length > 4 && t.endsWith("$$"))) while (++i < lines.length) { buf += "\n" + lines[i]; if (lines[i].trim().endsWith("$$")) break; }
       out.push(`<div class="dmath">${katexHtml(buf.replace(/^\$\$/, "").replace(/\$\$$/, ""), true)}</div>`);
+      continue;
+    }
+    if (t.startsWith("???")) {  // ??? Show answer ... ??? : a collapsed block
+      flush();
+      const title = t.slice(3).trim() || "Show answer";
+      const buf = [];
+      while (++i < lines.length && lines[i].trim() !== "???") buf.push(lines[i]);
+      out.push(`<details class="hidden-answer"><summary>${inlineMd(title, ctx)}</summary><div class="inner">${markdown(buf.join("\n"), ctx, true)}</div></details>`);
       continue;
     }
     if (/^(-{3,}|\*{3,})$/.test(t)) { flush(); out.push("<hr>"); continue; }
@@ -115,6 +123,7 @@ function markdown(text, ctx = {}) {
 function newCell(type) {
   const base = { id: uid(), type };
   if (type === "plot") return { ...base, kind: "function", exprs: "", expr2: "", expr3: "", annot: "", var: "", xmin: "", xmax: "", ymin: "", ymax: "", samples: "", logx: false, logy: false };
+  if (type === "check") return { ...base, prompt: "", reference: "", hint: "", answer: "" };
   return { ...base, source: "" };
 }
 function serialize() {
@@ -156,7 +165,7 @@ function createCellEl(cell) {
   const el = document.createElement("div");
   el.className = `cell ${cell.type}`;
   el.dataset.id = cell.id;
-  const badge = { math: "∑", text: "¶", plot: "⌁" }[cell.type];
+  const badge = { math: "∑", text: "¶", plot: "⌁", check: "?" }[cell.type] || "∑";
   el.innerHTML = `
     <div class="gutter" title="${cell.type} cell">${badge}</div>
     <div class="body"></div>
@@ -169,10 +178,12 @@ function createCellEl(cell) {
       <button data-add="math">+ math</button>
       <button data-add="text">+ text</button>
       <button data-add="plot">+ plot</button>
+      <button data-add="check">+ check</button>
     </div>`;
   const body = $(".body", el);
   if (cell.type === "math") buildMath(cell, body);
   else if (cell.type === "text") buildText(cell, body);
+  else if (cell.type === "check") buildCheck(cell, body);
   else buildPlot(cell, body);
 
   el.addEventListener("focusin", () => { el.classList.add("focus"); });
@@ -287,6 +298,50 @@ function buildText(cell, body) {
   md.addEventListener("click", edit);
   body._edit = edit;
   show();
+}
+
+// ---------- Check cells: a prompt, the student's answer, a hidden reference ----------
+function buildCheck(cell, body) {
+  const locked = !!state.share || !!cell.locked;
+  body.innerHTML = `
+    <div class="check-prompt md"></div>
+    <div class="check-row"><span class="lbl">your answer</span><input class="answer" placeholder="an expression, a number with units, a list, an equation…" spellcheck="false"><button class="check-btn">Check</button><span class="verdict"></span></div>
+    <div class="check-feedback"></div>
+    <details class="author" ${locked ? "hidden" : ""} ${cell.reference ? "" : "open"}>
+      <summary>author: prompt, reference answer, hint</summary>
+      <label>prompt (Markdown)<textarea class="prompt" rows="2" spellcheck="true"></textarea></label>
+      <label>reference answer<input class="reference" placeholder="e.g. (x - 1)(x + 1), 9.81 m/s^2, solve(x^2 == 4, x)" spellcheck="false"></label>
+      <label>hint (shown after a wrong answer)<input class="hint" spellcheck="true"></label>
+    </details>
+    <div class="err"></div>`;
+  const prompt = $(".check-prompt", body);
+  const showPrompt = () => { prompt.innerHTML = markdown(cell.prompt || "", { cellId: cell.id }) || `<span class="hint">${locked ? "" : "Write the question in the author section below."}</span>`; };
+  showPrompt();
+  const answer = $("input.answer", body);
+  answer.value = cell.answer || "";
+  answer.addEventListener("input", () => { cell.answer = answer.value; setDirty(true); acShow(answer); });
+  answer.addEventListener("keydown", ev => { if (acKey(ev)) return; if (ev.key === "Enter") { ev.preventDefault(); evaluateNow(); } if (ev.key === "Escape") answer.blur(); });
+  answer.addEventListener("focus", () => { state.activeInput = answer; });
+  answer.addEventListener("blur", () => setTimeout(acClose, 120));
+  $("button.check-btn", body).addEventListener("click", evaluateNow);
+  for (const key of ["prompt", "reference", "hint"]) {
+    const inp = body.querySelector(`.author .${key}`);
+    inp.value = cell[key] || "";
+    inp.addEventListener("input", () => { cell[key] = inp.value; if (key === "prompt") showPrompt(); touch(); });
+    inp.addEventListener("focus", () => { state.activeInput = inp; });
+  }
+}
+function renderCheck(el, cell, res) {
+  const verdict = $(".verdict", el), fb = $(".check-feedback", el);
+  el.classList.toggle("correct", res.correct === true);
+  el.classList.toggle("wrong", res.correct === false);
+  verdict.innerHTML = res.correct === true ? `<span class="ok">✓ correct</span>` : res.correct === false ? `<span class="no">✗ not yet</span>` : "";
+  let h = "";
+  if (res.correct !== null && res.correct !== undefined) {
+    h += `<div class="fbtext">${esc(res.feedback || "")}${res.answer_latex ? ` <span class="read">(read as ${katexHtml(res.answer_latex)})</span>` : ""}</div>`;
+    if (res.hint) h += `<details class="hint-box"><summary>hint</summary>${inlineMd(res.hint, {})}</details>`;
+  } else if (res.feedback) h += `<div class="hint">${esc(res.feedback)}</div>`;
+  fb.innerHTML = h;
 }
 
 // Core plot kinds. The catalog replaces this table with the server's, which also lists module kinds.
@@ -435,8 +490,12 @@ function sharedRequest() {
     const cellEl = sl.closest(".cell"); if (!cellEl) continue;
     (sliders[cellEl.dataset.id] = sliders[cellEl.dataset.id] || {})[sl.dataset.line] = +sl.value;
   }
-  for (const c of state.cells) if (c.type === "plot") plots[c.id] = { xmin: c.xmin || "", xmax: c.xmax || "", ymin: c.ymin || "", ymax: c.ymax || "" };
-  return { sliders, plots };
+  const answers = {};
+  for (const c of state.cells) {
+    if (c.type === "plot") plots[c.id] = { xmin: c.xmin || "", xmax: c.xmax || "", ymin: c.ymin || "", ymax: c.ymax || "" };
+    if (c.type === "check") answers[c.id] = c.answer || "";
+  }
+  return { sliders, plots, answers };
 }
 async function evaluateNow() {
   clearTimeout(state.evalTimer);
@@ -452,16 +511,17 @@ async function evaluateNow() {
     status(`<span class="bad">Cannot reach the Quire server. Is it still running?</span>`); return;
   }
   if (seq !== state.evalSeq) return; // a newer evaluation is in flight
-  let errors = 0, cached = 0, total = 0;
+  let errors = 0, cached = 0, total = 0, checks = 0, right = 0;
   for (const res of data.results || []) {
     state.results.set(res.id, res);
     if (res.ok === false) errors++;
     if (res.cached) cached++;
+    if (res.correct === true || res.correct === false) { checks++; if (res.correct) right++; }
     total++;
     renderResult(res);
   }
   const mods = state.catalog ? ` · ${state.catalog.modules.length} modules` : "";
-  const work = cached ? ` · ${total - cached} of ${total} cells re-evaluated` : "";
+  const work = (cached ? ` · ${total - cached} of ${total} cells re-evaluated` : "") + (checks ? ` · <b>${right} of ${checks} checks correct</b>` : "");
   status(errors ? `<span class="bad">${errors} cell${errors > 1 ? "s" : ""} with errors</span> · ${data.ms} ms${work}${mods}`
                 : `✓ evaluated in ${data.ms} ms${work}${mods}`);
 }
@@ -503,6 +563,8 @@ function renderResult(res) {
   } else if (cell.type === "text") {
     const body = $(".body", el);
     if (body._show) body._show();
+  } else if (cell.type === "check") {
+    renderCheck(el, cell, res);
   }
 }
 
@@ -1007,7 +1069,9 @@ async function exportHtml() {
   for (const c of state.cells) {
     const el = state.els.get(c.id), res = state.results.get(c.id) || {};
     if (c.type === "text") parts.push(`<section class="text">${markdown(c.source || "", { cellId: c.id, values: res.values || null })}</section>`);
-    else if (c.type === "math") {
+    else if (c.type === "check") {
+      parts.push(`<section class="check"><div class="text">${markdown(c.prompt || "", { cellId: c.id })}</div><div class="answer">Answer: <code>${esc(c.answer || "")}</code>${res.correct === true ? " ✓" : res.correct === false ? " ✗" : ""}</div></section>`);
+    } else if (c.type === "math") {
       let out = "";
       if (el) { const clone = $(".out", el).cloneNode(true); clone.querySelectorAll(".slider-row").forEach(n => n.remove()); out = clone.innerHTML; }
       parts.push(`<section class="math"><pre class="src">${esc(c.source || "")}</pre><div class="out">${out}</div>${res.error ? `<div class="err">${esc(res.error)}</div>` : ""}</section>`);
@@ -1031,6 +1095,8 @@ async function exportMarkdown() {
     if (c.type === "text") {
       let k = 0;
       lines.push((c.source || "").replace(/\{\{[^}]*\}\}/g, m => { const v = (res.values || [])[k++]; return v && !v.error ? `$${v.latex}$` : m; }), "");
+    } else if (c.type === "check") {
+      lines.push(c.prompt || "", "", `> Answer: \`${c.answer || ""}\`${res.correct === true ? " ✓" : res.correct === false ? " ✗" : ""}`, "");
     } else if (c.type === "math") {
       lines.push("```quire", c.source || "", "```");
       for (const o of res.outputs || []) if (o.latex) lines.push(`$$${o.head ? o.head + " = " : ""}${o.latex}${o.approx ? " \\approx " + o.approx : ""}$$`);
@@ -1046,6 +1112,7 @@ async function exportMarkdown() {
   download(docFileName() + ".md", lines.join("\n"), "text/markdown");
 }
 function cellText(c) {
+  if (c.type === "check") return `check: ${c.prompt || ""}\nreference: ${c.reference || ""}\nhint: ${c.hint || ""}`;
   if (c.type !== "plot") return c.source || "";
   const bits = [`${c.kind}: ${c.exprs || ""}`];
   if (c.expr2) bits.push(c.expr2); if (c.expr3) bits.push(c.expr3);
@@ -1224,6 +1291,61 @@ function insertTemplate(text) {
   inp.focus();
 }
 
+// ---------- Glossary: the definition of the function under the caret, or under the pointer in text ----------
+let glossBox = null, glossTimer = null, glossKey = null;
+function glossClose() { if (glossBox) { glossBox.remove(); glossBox = null; } glossKey = null; clearTimeout(glossTimer); }
+function glossEntry(name) {
+  if (!state.catalog || !name) return null;
+  return state.catalog.entries.find(e => e.name === name && (e.kind === "function" || e.kind === "constant" || e.kind === "unit")) || null;
+}
+function glossShow(entry, anchor, x, y) {
+  if (acBox) return;
+  const key = entry.name + "@" + anchor;
+  if (glossKey === key) return;
+  glossClose();
+  glossKey = key;
+  glossBox = document.createElement("div");
+  glossBox.className = "gloss";
+  glossBox.innerHTML = `<div class="sig">${esc(entry.kind === "function" ? entry.signature : entry.name)}<span class="kind">${esc(entry.kind)}${entry.module !== "core" ? " · " + esc(entry.module) : ""}</span></div>
+    <div class="doc">${esc(entry.doc)}</div>${entry.example ? `<div class="ex" title="Click to insert">${esc(entry.example)}</div>` : ""}`;
+  glossBox.onmousedown = ev => { const ex = ev.target.closest(".ex"); if (ex) { ev.preventDefault(); insertAtCursor(entry.example); } };
+  document.body.appendChild(glossBox);
+  glossBox.style.left = Math.min(x, window.innerWidth - 380) + "px"; glossBox.style.top = y + "px";
+}
+function glossFromCaret(inp) {
+  clearTimeout(glossTimer);
+  glossTimer = setTimeout(() => {
+    if (document.activeElement !== inp || acBox) { glossClose(); return; }
+    const pos = inp.selectionStart, v = inp.value;
+    let a = pos, b = pos;
+    while (a > 0 && /[\w]/.test(v[a - 1])) a--;
+    while (b < v.length && /[\w]/.test(v[b])) b++;
+    const word = v.slice(a, b);
+    const entry = word.length > 1 ? glossEntry(word) : null;
+    if (!entry) { glossClose(); return; }
+    const r = inp.getBoundingClientRect();
+    glossShow(entry, "caret" + inp.dataset.gid, r.left + window.scrollX + 12, r.bottom + window.scrollY + 2);
+  }, 350);
+}
+function wireGlossary() {
+  let gid = 0;
+  document.addEventListener("focusin", ev => { const t = ev.target; if (t.matches && t.matches("textarea.src, input.answer, input.exprs") && !t.dataset.gid) t.dataset.gid = String(++gid); });
+  document.addEventListener("selectionchange", () => { const t = document.activeElement; if (t && t.matches && t.matches(".cell.math textarea.src, input.answer, input.exprs")) glossFromCaret(t); });
+  document.addEventListener("keyup", ev => { const t = ev.target; if (t.matches && t.matches(".cell.math textarea.src, input.answer, input.exprs")) glossFromCaret(t); });
+  document.addEventListener("focusout", () => setTimeout(() => { if (!glossBox || !glossBox.matches(":hover")) glossClose(); }, 150));
+  document.addEventListener("mouseover", ev => {
+    const code = ev.target.closest && ev.target.closest(".md code");
+    if (!code) return;
+    const name = /^([A-Za-z_]\w*)\s*(\(|$)/.exec(code.textContent.trim());
+    const entry = name ? glossEntry(name[1]) : null;
+    if (!entry) return;
+    const r = code.getBoundingClientRect();
+    glossShow(entry, "code", r.left + window.scrollX, r.bottom + window.scrollY + 4);
+    code.addEventListener("mouseleave", () => setTimeout(() => { if (!glossBox || !glossBox.matches(":hover")) glossClose(); }, 250), { once: true });
+  });
+  document.addEventListener("keydown", ev => { if (ev.key === "Escape") glossClose(); });
+}
+
 // ---------- Autocomplete ----------
 let acBox = null, acItems = [], acIndex = 0, acInput = null, acRange = null;
 function acClose() { if (acBox) { acBox.remove(); acBox = null; } acItems = []; acInput = null; }
@@ -1244,6 +1366,7 @@ function acShow(inp) {
   const items = acCandidates(prefix, !!arrow);
   if (!items.length) { acClose(); return; }
   acItems = items; acIndex = 0; acInput = inp; acRange = [pos - prefix.length, pos];
+  glossClose();
   if (!acBox) { acBox = document.createElement("div"); acBox.className = "ac"; document.body.appendChild(acBox); }
   acRender();
   const r = inp.getBoundingClientRect();
@@ -1309,6 +1432,7 @@ function init() {
   });
   $("#btn-ref").onclick = () => { $("#ref").classList.toggle("hidden"); $("#btn-ref").classList.toggle("on"); };
   buildPalette();
+  wireGlossary();
   $("#btn-palette").onclick = () => { $("#palette").classList.toggle("hidden"); $("#btn-palette").classList.toggle("on"); };
   $("#btn-reload").onclick = () => loadCatalog(true);
   $("#ref-search").addEventListener("input", renderCatalog);

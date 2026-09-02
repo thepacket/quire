@@ -1,0 +1,91 @@
+{
+ "quire": 1,
+ "title": "A guided lesson",
+ "author": "Quire examples",
+ "cells": [
+  {
+   "type": "text",
+   "source": "# A guided lesson: the quadratic formula\nRead, try, then check. A **check** cell grades what you type against a hidden reference: any equivalent form counts. Wrong answers unlock a hint, and the answer is folded away until you want it. Hover a function name such as `solve` or `expand` for its definition."
+  },
+  {
+   "type": "text",
+   "source": "## 1. Expanding\nMultiply out $(x - 3)(x + 5)$. Type the expanded polynomial."
+  },
+  {
+   "type": "check",
+   "prompt": "Expand $(x - 3)(x + 5)$.",
+   "reference": "expand((x - 3)(x + 5))",
+   "hint": "Each term of the first bracket multiplies each term of the second: $x^2 + 5x - 3x - 15$.",
+   "answer": ""
+  },
+  {
+   "type": "text",
+   "source": "??? Show the worked answer\nThe four products are $x \\cdot x$, $x \\cdot 5$, $-3 \\cdot x$ and $-3 \\cdot 5$, so the result is $x^2 + 2x - 15$. In Quire: `expand((x - 3)(x + 5))` gives {{expand((x - 3)(x + 5))}}.\n???"
+  },
+  {
+   "type": "text",
+   "source": "## 2. Solving\nThe equation $x^2 + 2x - 15 = 0$ has two roots. Give both, as a list."
+  },
+  {
+   "type": "check",
+   "prompt": "Solve $x^2 + 2x - 15 = 0$. Write the roots as a list, e.g. `[1, 2]`.",
+   "reference": "solve(x^2 + 2 x - 15 == 0, x)",
+   "hint": "Factor: $(x - 3)(x + 5) = 0$. Or use the formula with $a = 1$, $b = 2$, $c = -15$.",
+   "answer": ""
+  },
+  {
+   "type": "math",
+   "source": "steps_solve(x^2 + 2 x - 15 == 0, x)"
+  },
+  {
+   "type": "text",
+   "source": "## 3. With units\nA stone is dropped from 20 m. How long does it fall? Use $g = 9.81\\ \\mathrm{m/s^2}$; the answer needs a unit."
+  },
+  {
+   "type": "math",
+   "source": "h = 20 m\ng = 9.81 m/s^2"
+  },
+  {
+   "type": "check",
+   "prompt": "Fall time from $h = 20$ m (with a unit, to two decimals is fine).",
+   "reference": "sqrt(2 h / g)",
+   "hint": "$h = \\tfrac12 g t^2$, so $t = \\sqrt{2h/g}$. Type `sqrt(2 h/g)` or a number with `s`.",
+   "answer": ""
+  },
+  {
+   "type": "text",
+   "source": "??? Show the answer\n$t = \\sqrt{2 h / g}$ = {{sqrt(2 h/g)}}, about {{sqrt(2 h/g) -> s}}.\n???"
+  },
+  {
+   "type": "text",
+   "source": "## 4. A limit, step by step\nBefore checking, predict $\\lim_{x \\to 0} \\frac{\\sin x}{x}$."
+  },
+  {
+   "type": "check",
+   "prompt": "$\\lim_{x \\to 0} \\dfrac{\\sin x}{x} = $ ?",
+   "reference": "limit(sin(x)/x, x, 0)",
+   "hint": "Both top and bottom go to 0: use L'Hôpital or the series $\\sin x = x - x^3/6 + \\dots$",
+   "answer": ""
+  },
+  {
+   "type": "math",
+   "source": "steps_limit(sin(x)/x, x, 0)"
+  },
+  {
+   "type": "text",
+   "source": "## 5. Matrices and separable equations\nMore derivations to read: an inverse by Gauss-Jordan and an ODE by separation of variables."
+  },
+  {
+   "type": "math",
+   "source": "steps_inverse(matrix([[2, 1], [1, 1]]))"
+  },
+  {
+   "type": "math",
+   "source": "steps_separable(x y, y, x)"
+  },
+  {
+   "type": "text",
+   "source": "---\nTo hand this lesson out, save it and create a read-only link in **Document**: students see the prompts and get graded, but the references and hints stay on the server until needed."
+  }
+ ]
+}

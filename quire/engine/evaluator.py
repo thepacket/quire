@@ -100,6 +100,101 @@ def _hold_ranges(args):
     return out
 
 
+def grade(answer, reference) -> tuple[bool, str]:
+    """Is the student's value the same as the reference? (correct, feedback)."""
+    def as_list(v):
+        if isinstance(v, (list, tuple, set, frozenset)):
+            return list(v)
+        if isinstance(v, sp.FiniteSet):
+            return list(v.args)
+        return None
+
+    la, lr = as_list(answer), as_list(reference)
+    if la is not None or lr is not None:
+        if lr is None:
+            return False, "Expected a single value, not a list."
+        if la is None:
+            return False, f"Expected a list of {len(lr)} value{'s' if len(lr) != 1 else ''}."
+        if len(la) != len(lr):
+            return False, f"Expected {len(lr)} value{'s' if len(lr) != 1 else ''}, got {len(la)}."
+        remaining = list(lr)
+        for a in la:
+            hit = next((i for i, r in enumerate(remaining) if _values_equal(a, r)[0]), None)
+            if hit is None:
+                return False, "One of the values is not right."
+            remaining.pop(hit)
+        return True, "Correct."
+    return _values_equal(answer, reference)
+
+
+def _values_equal(a, b) -> tuple[bool, str]:
+    from ..modules.builtin.algebra import numerically_equal
+
+    if isinstance(a, sp.Eq) or isinstance(b, sp.Eq):
+        if not isinstance(b, sp.Eq):
+            return False, "Expected an expression, not an equation."
+        if not isinstance(a, sp.Eq):
+            return False, "Expected an equation (write it with ==)."
+        da, db = sp.sympify(a.lhs - a.rhs), sp.sympify(b.lhs - b.rhs)
+        try:
+            ratio = sp.simplify(da / db)
+            if ratio.is_number and ratio != 0 and ratio.is_finite:
+                return True, "Correct."
+        except Exception:  # noqa: BLE001
+            pass
+        return False, "The equation is not equivalent to the expected one."
+    if isinstance(a, (bool, BooleanAtom)) or isinstance(b, (bool, BooleanAtom)):
+        return bool(a) == bool(b), "Correct." if bool(a) == bool(b) else "Not right."
+    try:
+        a, b = sp.sympify(a), sp.sympify(b)
+    except (sp.SympifyError, TypeError, ValueError):
+        return False, "Expected a mathematical value."
+    if isinstance(a, sp.MatrixBase) or isinstance(b, sp.MatrixBase):
+        if not (isinstance(a, sp.MatrixBase) and isinstance(b, sp.MatrixBase)):
+            return False, "Expected a matrix." if isinstance(b, sp.MatrixBase) else "Expected a value, not a matrix."
+        if a.shape != b.shape:
+            return False, f"Expected a {b.rows}×{b.cols} matrix."
+        try:
+            same = all(sp.simplify(x - y) == 0 for x, y in zip(a, b))
+        except Exception:  # noqa: BLE001
+            same = False
+        return (True, "Correct.") if same else (False, "Some entries differ.")
+    if U.has_units(a) or U.has_units(b):
+        try:
+            same = U.SI.get_dimension_system().equivalent_dims(U.u.Dimension(U.dimension_of(a)), U.u.Dimension(U.dimension_of(b)))
+        except Exception:  # noqa: BLE001
+            same = U.dimension_of(a) == U.dimension_of(b)
+        if not same:
+            return False, f"Check the units: expected a quantity with dimension {U.dimension_of(b)}."
+        a, b = U.strip_units(U.strip_angles(U.to_base(a)))[0], U.strip_units(U.strip_angles(U.to_base(b)))[0]
+    extra = getattr(a, "free_symbols", set()) - getattr(b, "free_symbols", set())
+    if extra:
+        return False, f"Your answer still contains {', '.join(sorted(str(x) for x in extra))}."
+    if not getattr(a, "free_symbols", set()) and not getattr(b, "free_symbols", set()):
+        try:
+            fa, fb = complex(sp.N(a)), complex(sp.N(b))
+        except (TypeError, ValueError):
+            fa = fb = None
+        if fa is not None:
+            tol = 5e-3 if (a.atoms(sp.Float) or b.atoms(sp.Float)) else 1e-9
+            if abs(fa - fb) <= tol * max(1.0, abs(fb)):
+                return True, "Correct."
+            if abs(fa - fb) <= 0.05 * max(1.0, abs(fb)):
+                return False, "Close, but not within rounding: check the arithmetic or the number of digits."
+            return False, "That value is not right."
+    try:
+        if sp.simplify(a - b) == 0:
+            return True, "Correct."
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        if numerically_equal(a, b):
+            return True, "Correct (a different form, but the same expression)."
+    except Exception:  # noqa: BLE001
+        pass
+    return False, "Not the expected expression."
+
+
 class DefinedFunction:
     """A worksheet function ``f(x) = body [-> unit]``.
 
@@ -399,6 +494,8 @@ class Evaluator:
             t0 = time.perf_counter()
             if kind == "text":
                 res = {"id": cid, **self.evaluate_text(cell.get("source", ""), env)}
+            elif kind == "check":
+                res = {"id": cid, **self.evaluate_check(cell, env)}
             elif kind == "plot":
                 res = {"id": cid, **sample_plot(cell, env, self)}
             else:
@@ -422,6 +519,9 @@ class Evaluator:
                 return (("text", source), [])
             texts = placeholders(source)
             static = ("text", source)
+        elif kind == "check":
+            static = ("check", cell.get("prompt", ""), cell.get("reference", ""), cell.get("answer", ""), cell.get("hint", ""))
+            texts = [cell.get("reference", ""), cell.get("answer", "")]
         elif kind == "plot":
             fields = ("kind", "exprs", "expr2", "expr3", "var", "xmin", "xmax", "ymin", "ymax", "samples", "annot")
             static = ("plot",) + tuple(str(cell.get(f) or "") for f in fields)
@@ -482,6 +582,49 @@ class Evaluator:
         if delta["trace"]:
             env.setdefault("$trace", []).extend(delta["trace"])
 
+    # -- check cells: grade an answer against the author's reference ------
+    def _scratch(self, env: dict) -> dict:
+        scratch = dict(env)
+        scratch["$trace"] = list(env.get("$trace", []))
+        return scratch
+
+    def _value_of(self, text: str, env: dict):
+        r = self.evaluate_math(text, self._scratch(env))
+        if not r["ok"]:
+            raise QuireError(r["error"])
+        if not self.last_values:
+            raise QuireError("Nothing to evaluate.")
+        v = self.last_values[-1]
+        return v.result if isinstance(v, Steps) else v
+
+    def evaluate_check(self, cell: dict, env: dict) -> dict:
+        reference = (cell.get("reference") or "").strip()
+        answer = (cell.get("answer") or "").strip()
+        out = {"ok": True, "correct": None, "feedback": ""}
+        if not reference:
+            out["feedback"] = "No reference answer yet: open the author section and fill it in."
+            return out
+        if not answer:
+            return out
+        try:
+            ref = self._value_of(reference, env)
+        except QuireError as exc:
+            return {"ok": False, "correct": None, "feedback": "", "error": f"The reference answer does not evaluate: {exc}"}
+        try:
+            ans = self._value_of(answer, env)
+        except QuireError as exc:
+            out.update(correct=False, feedback=f"I could not read the answer: {exc}")
+            return out
+        correct, feedback = grade(ans, ref)
+        out.update(correct=correct, feedback=feedback)
+        try:
+            out["answer_latex"] = to_latex(self.display_value(ans, env.get(DIGITS_KEY)))
+        except Exception:  # noqa: BLE001
+            pass
+        if not correct and (cell.get("hint") or "").strip():
+            out["hint"] = cell["hint"].strip()
+        return out
+
     # -- text cells: {{expr}} placeholders --------------------------------
     def evaluate_text(self, source: str, env: dict) -> dict:
         """Values for the {{expr}} placeholders of a text cell (outside $...$ math), in order."""
@@ -489,7 +632,7 @@ class Evaluator:
             return {"ok": True}
         values = []
         for expr in placeholders(source):
-            r = self.evaluate_math(expr, dict(env))  # a copy: a placeholder never defines anything
+            r = self.evaluate_math(expr, self._scratch(env))  # a copy: a placeholder never defines anything
             if r["ok"] and r["outputs"]:
                 o = r["outputs"][-1]
                 values.append({"latex": o.get("latex", ""), "plain": o.get("plain", ""), "approx": o.get("approx"),

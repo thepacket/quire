@@ -239,6 +239,173 @@ def steps_solve(eq, x):
     raise EvalError("steps_solve handles linear and quadratic equations; use solve for others.")
 
 
+# ---------------------------------------------------------------- limits
+def steps_limit(f, x, a, _depth=0):
+    """Limit by substitution, factoring, leading terms or L'Hôpital, one idea per step."""
+    x = _sym(x)
+    f, a = sp.sympify(f), sp.sympify(a)
+    steps = []
+    L = sp.Limit(f, x, a)
+    num, den = sp.fraction(sp.together(f))
+    try:
+        vn, vd = sp.limit(num, x, a), sp.limit(den, x, a)
+    except Exception:  # noqa: BLE001
+        vn = vd = None
+    if a.is_finite and vn is not None and vd not in (0, None) and vn.is_finite and vd.is_finite:
+        res = sp.simplify(vn / vd)
+        steps.append((f"substitute {x} = {a}: the expression is continuous there", sp.Eq(L, res, evaluate=False)))
+        return Steps(res, steps, f"limit of {f} as {x} -> {a}")
+    if a.is_finite and vn == 0 and vd == 0:
+        cancelled = sp.cancel(f)
+        if cancelled != f and sp.fraction(cancelled)[1].subs(x, a) != 0:
+            steps.append(("0/0: factor and cancel the common factor", sp.Eq(L, sp.Limit(cancelled, x, a), evaluate=False)))
+            inner = steps_limit(cancelled, x, a, _depth + 1)
+            return Steps(inner.result, steps + inner.steps, f"limit of {f} as {x} -> {a}")
+        if _depth < 3:
+            dn, dd = sp.diff(num, x), sp.diff(den, x)
+            steps.append(("0/0: L'Hôpital's rule, differentiate numerator and denominator", sp.Eq(L, sp.Limit(dn / dd, x, a), evaluate=False)))
+            inner = steps_limit(dn / dd, x, a, _depth + 1)
+            return Steps(inner.result, steps + inner.steps, f"limit of {f} as {x} -> {a}")
+    if not a.is_finite and num.is_polynomial(x) and den.is_polynomial(x):
+        pn, pd = sp.Poly(num, x), sp.Poly(den, x)
+        lead = pn.LC() * x ** pn.degree() / (pd.LC() * x ** pd.degree())
+        steps.append(("only the leading terms matter as x grows", sp.Eq(L, sp.Limit(lead, x, a), evaluate=False)))
+        res = sp.limit(lead, x, a)
+        steps.append(("evaluate", sp.Eq(sp.Limit(lead, x, a), res, evaluate=False)))
+        return Steps(res, steps, f"limit of {f} as {x} -> {a}")
+    if vn is not None and vd is not None and (vn.is_infinite or vd.is_infinite) and _depth < 3 and a.is_finite is False:
+        dn, dd = sp.diff(num, x), sp.diff(den, x)
+        steps.append(("∞/∞: L'Hôpital's rule", sp.Eq(L, sp.Limit(dn / dd, x, a), evaluate=False)))
+        inner = steps_limit(dn / dd, x, a, _depth + 1)
+        return Steps(inner.result, steps + inner.steps, f"limit of {f} as {x} -> {a}")
+    res = sp.limit(f, x, a)
+    ser = None
+    try:
+        if a.is_finite:
+            ser = sp.series(f, x, a, 3).removeO()
+    except Exception:  # noqa: BLE001
+        ser = None
+    if ser is not None and ser != f:
+        steps.append((f"expand around {x} = {a}", sp.Eq(f, ser, evaluate=False)))
+    steps.append(("standard limit", sp.Eq(L, res, evaluate=False)))
+    return Steps(res, steps, f"limit of {f} as {x} -> {a}")
+
+
+# ---------------------------------------------------------------- Taylor series
+def steps_series(f, x, x0=0, n=4):
+    """Taylor polynomial from the derivatives at the centre, one order per step."""
+    x = _sym(x)
+    f, x0, n = sp.sympify(f), sp.sympify(x0), int(n)
+    steps = [(f"Taylor's formula around {x} = {x0}: sum of f^(k)({x0}) ({x} - {x0})^k / k!", None)]
+    total = sp.S.Zero
+    d = f
+    for k in range(n):
+        if k > 0:
+            d = sp.diff(d, x)
+        val = sp.simplify(d.subs(x, x0))
+        term = val * (x - x0) ** k / sp.factorial(k)
+        steps.append((f"k = {k}: f{'' if k == 0 else chr(39) * k if k <= 3 else f'^({k})'}({x0}) = {val}", sp.Eq(sp.Symbol(f"term_{k}"), term, evaluate=False)))
+        total += term
+    total = sp.expand(total)
+    steps.append((f"add the terms (remainder of order {n})", sp.Eq(f, total + sp.O((x - x0) ** n, (x, x0)), evaluate=False)))
+    return Steps(total, steps, f"Taylor polynomial of {f} of order {n - 1}")
+
+
+# ---------------------------------------------------------------- systems and inverses
+def steps_system(equations, variables):
+    """A linear system by elimination on the augmented matrix; a nonlinear one by substitution."""
+    eqs = [e if isinstance(e, sp.Eq) else sp.Eq(e, 0) for e in (list(equations) if isinstance(equations, (list, tuple)) else [equations])]
+    vs = [_sym(v) for v in (list(variables) if isinstance(variables, (list, tuple)) else [variables])]
+    exprs = [sp.expand(e.lhs - e.rhs) for e in eqs]
+    if all(ex.is_polynomial(*vs) and sp.Poly(ex, *vs).total_degree() <= 1 for ex in exprs):
+        A, b = sp.linear_eq_to_matrix(exprs, vs)
+        inner = steps_gauss(A, b)
+        steps = [("write the augmented matrix [A | b]", None)] + inner.steps
+        R = inner.result
+        sol = {}
+        for i in range(R.rows):
+            row = R[i, :-1]
+            pivots = [j for j in range(len(vs)) if row[j] != 0]
+            if not pivots:
+                if R[i, -1] != 0:
+                    steps.append(("a row reads 0 = nonzero: no solution", None))
+                    return Steps([], steps, "solve a linear system")
+                continue
+            j = pivots[0]
+            sol[vs[j]] = sp.simplify(R[i, -1] - sum(row[k] * vs[k] for k in pivots[1:]))
+        steps.append(("read off the solution", sp.FiniteSet(*[sp.Eq(v, sol[v], evaluate=False) for v in vs if v in sol])))
+        return Steps([sp.Eq(v, sol[v], evaluate=False) for v in vs if v in sol], steps, "solve a linear system")
+    steps = []
+    remaining, subs, left = list(exprs), {}, list(vs)
+    while len(remaining) > 1 and len(left) > 1:
+        # substitute a variable that appears linearly somewhere, so no solution branch is lost
+        pick = next(((i, v) for v in left for i, ex in enumerate(remaining)
+                     if ex.has(v) and ex.is_polynomial(v) and sp.Poly(ex, v).degree() == 1), None)
+        if pick is None:
+            break
+        idx, v = pick
+        expr = sp.solve(remaining[idx], v)[0]
+        steps.append((f"solve the equation for {v}", sp.Eq(v, expr, evaluate=False)))
+        remaining = [sp.expand(ex.subs(v, expr)) for i, ex in enumerate(remaining) if i != idx]
+        subs[v] = expr
+        left.remove(v)
+        steps.append((f"substitute into the other equation{'s' if len(remaining) > 1 else ''}", sp.FiniteSet(*[sp.Eq(ex, 0, evaluate=False) for ex in remaining])))
+    result = sp.solve([sp.Eq(e, 0) for e in remaining], left, dict=True)
+    full = []
+    for r in result:
+        r = dict(r)
+        for v in reversed(list(subs)):
+            r[v] = sp.simplify(subs[v].subs(r))
+        full.append(r)
+    steps.append(("solve what is left, then back-substitute", sp.FiniteSet(*[sp.FiniteSet(*[sp.Eq(v, r[v], evaluate=False) for v in vs if v in r]) for r in full])))
+    return Steps([[sp.Eq(v, r[v], evaluate=False) for v in vs if v in r] for r in full], steps, "solve a system by substitution")
+
+
+def steps_inverse(A):
+    """Gauss-Jordan on [A | I], one row operation per step."""
+    M = sp.Matrix(A)
+    if M.rows != M.cols:
+        raise EvalError("Only square matrices have inverses.")
+    n = M.rows
+    det = sp.simplify(M.det())
+    steps = [("determinant (nonzero means invertible)", sp.Eq(sp.Symbol("det"), det, evaluate=False))]
+    if det == 0:
+        steps.append(("the matrix is singular: no inverse", None))
+        return Steps(sp.Symbol("no_inverse"), steps, "matrix inverse")
+    inner = steps_gauss(M.row_join(sp.eye(n)))
+    steps.append(("row-reduce [A | I] until the left block is the identity", None))
+    steps.extend(inner.steps[1:])
+    inv = sp.ImmutableMatrix(inner.result[:, n:])
+    steps.append(("the right block is A^-1", inv))
+    return Steps(inv, steps, "matrix inverse by Gauss-Jordan")
+
+
+# ---------------------------------------------------------------- separable ODEs
+def steps_separable(rhs, y, x):
+    """dy/dx = f(x) g(y) by separation of variables: separate, integrate both sides, solve for y."""
+    x, y = _sym(x), _sym(y)
+    if isinstance(rhs, sp.Eq):
+        rhs = rhs.rhs if rhs.lhs.has(sp.Derivative) or str(rhs.lhs).startswith("D(") else rhs.lhs
+    rhs = sp.sympify(rhs)
+    parts = sp.separatevars(rhs, symbols=[x, y], dict=True)
+    if parts is None:
+        raise EvalError("The right-hand side does not separate into f(x) g(y).")
+    fx = parts.get(x, sp.S.One) * parts.get("coeff", sp.S.One)
+    gy = parts.get(y, sp.S.One)
+    C = sp.Symbol("C")
+    steps = [("write the equation as dy/dx = f(x) g(y)", sp.Eq(sp.Symbol("f"), fx, evaluate=False)), ("with", sp.Eq(sp.Symbol("g"), gy, evaluate=False)),
+             ("separate the variables: dy / g(y) = f(x) dx", sp.Eq(sp.Integral(1 / gy, y), sp.Integral(fx, x), evaluate=False))]
+    G, F = sp.integrate(1 / gy, y), sp.integrate(fx, x)
+    steps.append(("integrate both sides", sp.Eq(G, F + C, evaluate=False)))
+    sols = sp.solve(sp.Eq(G, F + C), y)
+    if sols:
+        res = sols[0]
+        steps.append(("solve for y", sp.Eq(y, res, evaluate=False)))
+        return Steps(sp.Eq(y, res, evaluate=False), steps, f"separable equation dy/dx = {rhs}")
+    steps.append(("the relation is implicit", None))
+    return Steps(sp.Eq(G, F + C, evaluate=False), steps, f"separable equation dy/dx = {rhs}")
+
+
 def register(api):
     S = "Step by step"
     api.function("steps_diff", steps_diff, signature="steps_diff(f, x)", doc="derivative with each rule shown", category=S,
@@ -249,5 +416,15 @@ def register(api):
                  category=S, example="steps_partial_fractions((3 x + 5)/(x^2 + 3 x + 2), x)")
     api.function("steps_gauss", steps_gauss, signature="steps_gauss(A, b)", doc="row reduction, one operation per step", category=S,
                  example="steps_gauss(matrix([[2, 1], [1, 3]]), [3, 5])")
+    api.function("steps_limit", steps_limit, signature="steps_limit(f, x, a)", doc="limit by substitution, factoring, leading terms or L'Hôpital", category=S,
+                 example="steps_limit((x^2 - 1)/(x - 1), x, 1)")
+    api.function("steps_series", steps_series, signature="steps_series(f, x, x0, n)", doc="Taylor polynomial from the derivatives, order by order", category=S,
+                 example="steps_series(exp(x), x, 0, 4)")
+    api.function("steps_system", steps_system, signature="steps_system([eq1, eq2], [x, y])", doc="linear systems by elimination, others by substitution", category=S,
+                 example="steps_system([2 x + y == 5, x - y == 1], [x, y])")
+    api.function("steps_inverse", steps_inverse, signature="steps_inverse(A)", doc="matrix inverse by Gauss-Jordan", category=S,
+                 example="steps_inverse(matrix([[2, 1], [1, 1]]))")
+    api.function("steps_separable", steps_separable, signature="steps_separable(rhs, y, x)", doc="dy/dx = f(x) g(y) by separation of variables", category=S,
+                 example="steps_separable(x y, y, x)")
     api.function("steps_solve", steps_solve, signature="steps_solve(eq, x)", doc="linear or quadratic equation, step by step", category=S,
                  example="steps_solve(x^2 - 5 x + 6 == 0, x)")

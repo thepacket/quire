@@ -40,6 +40,9 @@ main { flex: 1; overflow-y: auto; padding: 24px 16px 120px; }
 .cell.math { border-left-color: var(--math); }
 .cell.text { border-left-color: var(--text); }
 .cell.plot { border-left-color: var(--plot); }
+.cell.check { border-left-color: #8e44ad; }
+.cell.check.correct { border-left-color: #1f9d6f; }
+.cell.check.wrong { border-left-color: var(--warn); }
 .cell.err { border-left-color: var(--error); }
 .gutter { display: flex; align-items: flex-start; justify-content: center; padding-top: 6px; color: var(--muted); font-size: 12px; font-weight: 600; user-select: none; }
 .body { min-width: 0; }
@@ -239,3 +242,31 @@ body.shared .plot-form input, body.shared .annot-wrap input { background: #fbfaf
 .meta .cost { color: #9ca3af; }
 .meta .cost.slow { color: var(--warn); font-weight: 600; }
 .out-line.preview { color: var(--muted); font-family: var(--mono); font-size: 14px; }
+
+/* check cells */
+.check-prompt { padding: 4px 10px 2px; font-size: 15.5px; line-height: 1.5; }
+.check-row { display: flex; align-items: center; gap: 8px; padding: 4px 10px; flex-wrap: wrap; }
+.check-row .lbl { color: var(--muted); font-size: 13px; }
+.check-row input.answer { flex: 1; min-width: 220px; font-family: var(--mono); font-size: 14.5px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; background: var(--paper); }
+.check-row input.answer:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(47,111,237,.12); }
+.check-row .verdict .ok { color: #1f9d6f; font-weight: 600; } .check-row .verdict .no { color: var(--warn); font-weight: 600; }
+.check-feedback { padding: 0 10px 6px; font-size: 13.5px; color: #4b5563; }
+.check-feedback .read { color: var(--muted); }
+.check-feedback .hint-box { margin-top: 4px; } .check-feedback .hint-box summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+.cell.check details.author { margin: 4px 10px 6px; font-size: 12.5px; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 4px 10px; }
+.cell.check details.author summary { cursor: pointer; }
+.cell.check details.author label { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; }
+.cell.check details.author input, .cell.check details.author textarea { font: inherit; font-size: 13.5px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--paper); color: var(--ink); }
+.cell.check details.author input.reference { font-family: var(--mono); }
+body.shared .cell.check details.author { display: none !important; }
+.md details.hidden-answer { margin: 6px 0; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; background: #fbfaf7; }
+.md details.hidden-answer summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.md details.hidden-answer .inner { padding-top: 4px; }
+/* glossary */
+.gloss { position: absolute; z-index: 9; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); max-width: 360px; padding: 8px 12px; font-size: 13px; }
+.gloss .sig { font-family: var(--mono); font-size: 12.5px; font-weight: 600; display: flex; justify-content: space-between; gap: 12px; }
+.gloss .kind { font-family: var(--sans); font-weight: 400; color: var(--muted); font-size: 11px; }
+.gloss .doc { color: #4b5563; margin: 3px 0; }
+.gloss .ex { font-family: var(--mono); font-size: 12px; color: var(--accent); cursor: pointer; }
+.gloss .ex:hover { text-decoration: underline; }
+@media print { .cell.check details.author { display: none !important; } }

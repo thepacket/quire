@@ -375,6 +375,25 @@ Python keyword, the parser treats them as variables unless followed by `(`.
   `pca_transform`, `explained_variance`, `knn_predict`, `accuracy`, `confusion_matrix`,
   `r2_score`, `rmse`, `standardize`, `train_test_split`, on lists or `read_csv` tables.
 
+### Guided worksheets
+
+A **check** cell (the "+ check" button) holds a prompt in Markdown, the student's answer
+box, and an author section with the reference answer and an optional hint. The answer is
+graded by identity against the reference: `(x - 1)(x + 1)` matches `x^2 - 1`, `[2, -2]`
+matches `solve(x^2 == 4, x)` in any order, `10.8 km/hr` matches `3 m/s`, a decimal is
+accepted within half a percent, and equivalent equations count. Wrong answers get a
+reason (a stray variable, wrong units, close but mis-rounded) and unlock the hint. The
+status line keeps the score. On a read-only share link the references and hints never
+leave the server: the student's answers are graded there.
+
+In text cells, a block that starts with `??? Show answer` and ends with `???` is folded
+away until clicked. Hover a function name in backticks, or rest the caret on one in a
+math cell, for its definition and an example that inserts on click.
+
+Step-by-step derivations now also cover limits (`steps_limit`), Taylor series
+(`steps_series`), systems of equations (`steps_system`), matrix inverses
+(`steps_inverse`) and separable ODEs (`steps_separable`).
+
 ### Backends
 
 A module can also register a *fallback* for an operation:

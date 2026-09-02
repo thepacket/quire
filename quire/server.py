@@ -195,17 +195,34 @@ class App:
         if name is None:
             return None
         p = self._path(name)
-        return json.loads(p.read_text()) if p.is_file() else None
+        if not p.is_file():
+            return None
+        doc = json.loads(p.read_text())
+        cells = []
+        for cell in doc.get("cells", []):
+            if cell.get("type") == "check":  # the reference and the hint stay on the server
+                cell = dict(cell, reference="", hint="", locked=True, has_hint=bool((cell.get("hint") or "").strip()))
+            cells.append(cell)
+        return dict(doc, cells=cells)
+
+    def _stored_doc(self, token: str) -> dict | None:
+        name = self._shares().get(token) if re.match(r"^[\w-]{8,64}$", token or "") else None
+        p = self._path(name) if name else None
+        return json.loads(p.read_text()) if p and p.is_file() else None
 
     def shared_evaluate(self, token: str, body: dict) -> dict:
         """Evaluate a shared worksheet with the viewer's slider values and plot ranges applied, nothing else."""
         import copy
 
-        doc = self.shared_doc(token)
+        doc = self._stored_doc(token)
         if doc is None:
             raise FileNotFoundError(token)
         cells = copy.deepcopy(doc.get("cells", []))
         sliders, plots = body.get("sliders") or {}, body.get("plots") or {}
+        answers = body.get("answers") or {}
+        for cell in cells:
+            if cell.get("type") == "check" and isinstance(answers.get(str(cell.get("id"))), str):
+                cell["answer"] = answers[str(cell.get("id"))][:2000]
         number = re.compile(r"^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?\s*$")
         for cell in cells:
             cid = str(cell.get("id"))
@@ -224,7 +241,10 @@ class App:
                     v = plots[cid].get(k)
                     if isinstance(v, str) and (v == "" or number.match(v)):
                         cell[k] = v.strip()
-        return self.evaluate(cells)
+        out = self.evaluate(cells)
+        for r in out.get("results", []):  # never echo the reference back
+            r.pop("reference", None)
+        return out
 
     def file_path(self, name: str) -> Path | None:
         """An uploaded data or image file, for /files/<name>."""
