@@ -46,6 +46,7 @@ class ModuleAPI:
         self.description = description
         self.entries: list[Entry] = []
         self.fallbacks: dict[str, list] = {}
+        self.plot_kinds: dict[str, dict] = {}
 
     def fallback(self, operation: str, fn, priority: int = 50):
         """Register a backend for an operation ("integrate", "simplify", "limit", "sum").
@@ -68,6 +69,21 @@ class ModuleAPI:
 
         return add(impl) if impl is not None else add
 
+    def plot_kind(self, name: str, fn, *, label: str, f1: str, f2: str | None = None, f3: str | None = None,
+                  var: str | None = None, range: str | None = None, yrange: bool = False, ph1: str = "",
+                  ph2: str = "", ph3: str = "", renderer: str = "svg", annot: bool = False, doc: str = "",
+                  samples: str = "400"):
+        """Add a plot kind to the plot cell's menu.
+
+        ``fn(cell, env, ev)`` receives the cell fields (exprs, expr2, expr3, var, xmin, xmax, ymin, ymax,
+        samples), the worksheet environment and the evaluator, and returns {"series": [...], ...} in the
+        same shape as the core kinds (see quire.engine.plotting, whose helpers modules may use). The other
+        arguments label the form fields, as in quire.engine.plotting.register_kind.
+        """
+        self.plot_kinds[name] = dict(fn=fn, name=name, label=label, f1=f1, f2=f2, f3=f3, var=var, range=range,
+                                     yrange=yrange, ph1=ph1, ph2=ph2, ph3=ph3, renderer=renderer, annot=annot,
+                                     module=self.name, doc=doc, samples=samples)
+
     def constant(self, name: str, value, *, doc: str = "", category: str = "", example: str = ""):
         self.entries.append(Entry(name, "constant", value, name, doc, self.name, category, example))
 
@@ -83,6 +99,7 @@ class LoadedModule:
     entries: list[Entry]
     error: str | None = None
     fallbacks: dict = field(default_factory=dict)
+    plot_kinds: dict = field(default_factory=dict)
 
 
 # Language constructs, shown first in the reference panel. (name, signature, doc, example)
@@ -118,10 +135,25 @@ class Registry:
                 ns[e.name] = e.value
         return ns
 
+    def plot_kinds(self) -> dict:
+        """Plot kinds added by modules, name -> descriptor (with "fn")."""
+        out: dict = {}
+        for mod in self.modules:
+            out.update(mod.plot_kinds)
+        return out
+
     def conflicts(self) -> list[str]:
         """Names defined by more than one module (the later module wins)."""
+        from ..engine.plotting import KINDS
+
         seen: dict[str, str] = {}
         out = []
+        kinds: dict[str, str] = {k: "core" for k in KINDS}
+        for mod in self.modules:
+            for k in mod.plot_kinds:
+                if k in kinds:
+                    out.append(f"plot kind '{k}' is defined by both {kinds[k]} and {mod.name}; {mod.name} wins")
+                kinds[k] = mod.name
         for mod in self.modules:
             for e in mod.entries:
                 if e.kind == "unit" and len(e.name) == 1:
@@ -132,7 +164,11 @@ class Registry:
         return out
 
     def catalog(self) -> dict:
+        from ..engine.plotting import describe_kinds
+
+        kinds = describe_kinds(self.plot_kinds())
         return {
+            "plot_kinds": kinds,
             "modules": [
                 {"name": m.name, "description": m.description, "path": m.path, "error": m.error,
                  "count": len(m.entries)}
@@ -140,7 +176,9 @@ class Registry:
             ],
             "entries": [{"name": n, "kind": "syntax", "signature": sig, "doc": doc, "module": "core",
                          "category": "Syntax", "example": ex} for n, sig, doc, ex in SYNTAX]
-                       + [e.describe() for m in self.modules for e in m.entries if not e.hidden],
+                       + [e.describe() for m in self.modules for e in m.entries if not e.hidden]
+                       + [{"name": k["label"], "kind": "plot", "signature": k["label"], "doc": k["doc"],
+                           "module": k["module"], "category": "Plots", "example": k["name"]} for k in kinds],
             "conflicts": self.conflicts(),
         }
 
@@ -155,7 +193,7 @@ def _load_from_file(path: Path, fallback_name: str) -> LoadedModule:
         desc = getattr(module, "DESCRIPTION", "")
         api = ModuleAPI(name, desc)
         module.register(api)
-        return LoadedModule(name, desc, str(path), api.entries, fallbacks=api.fallbacks)
+        return LoadedModule(name, desc, str(path), api.entries, fallbacks=api.fallbacks, plot_kinds=api.plot_kinds)
     except Exception:
         err = traceback.format_exc(limit=3)
         return LoadedModule(fallback_name, "", str(path), [], error=err)

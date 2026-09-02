@@ -1,4 +1,7 @@
 """Control systems: transfer functions in s, poles and zeros, responses, stability, PID, state space."""
+import math
+
+import numpy as np
 import sympy as sp
 
 from quire.engine.errors import EvalError
@@ -166,12 +169,8 @@ def observability(A, C):
     return M.rank() == n
 
 
-def root_locus(G, s, k_max=10, n=200):
-    """Closed-loop pole locations for gains 0..k_max: [real parts, imaginary parts] for a scatter plot."""
-    import numpy as np
-
-    G = sp.sympify(G)
-    s = _sym(s)
+def _locus(G, s, k_max=10, n=200):
+    """Closed-loop pole locations of 1 + K G = 0 for K in [0, k_max]: (real parts, imaginary parts)."""
     num, den = sp.fraction(sp.cancel(G))
     pn, pd = sp.Poly(num, s), sp.Poly(den, s)
     re, im = [], []
@@ -180,6 +179,14 @@ def root_locus(G, s, k_max=10, n=200):
         roots = np.roots([float(c) for c in coeffs])
         re.extend(float(r.real) for r in roots)
         im.extend(float(r.imag) for r in roots)
+    return re, im
+
+
+def root_locus(G, s, k_max=10, n=200):
+    """Closed-loop pole locations for gains 0..k_max: [real parts, imaginary parts] for a scatter plot."""
+    import numpy as np
+
+    re, im = _locus(sp.sympify(G), _sym(s), k_max, n)
     _note(f"root locus: closed-loop poles of 1 + K G(s) = 0 for K from 0 to {float(k_max):g}")
     return [re, im]
 
@@ -195,7 +202,81 @@ def nyquist(H, s, f_min=0.01, f_max=100, n=400):
     return [[float(v) for v in vals.real], [float(v) for v in vals.imag]]
 
 
+
+def _tf_from_cell(cell, env, ev):
+    from quire.engine import plotting as P
+    from quire.engine import units as U
+
+    src = (cell.get("exprs") or "").strip()
+    sv = (cell.get("var") or "").strip() or "s"
+    ns = ev.namespace(env, [sv])
+    s = ns[sv]
+    H = P.resolve(src, ns, ev, s)
+    unknown = H.free_symbols - {s}
+    if unknown:
+        raise EvalError(f"'{src}' still depends on {', '.join(sorted(str(u) for u in unknown))}; define them above.")
+    return U.strip_units(H)[0], s, ns, H
+
+
+def _bode_plot(cell, env, ev):
+    """Plot kind: magnitude (dB) and phase (degrees) of H(j 2 pi f) against frequency."""
+    from quire.engine import plotting as P
+    from quire.engine import units as U
+
+    if not (cell.get("exprs") or "").strip():
+        return {"series": [], "empty": True}
+    Hn, s, ns, H = _tf_from_cell(cell, env, ev)
+    f0 = float(U.strip_units(P.bound(cell.get("xmin"), "0.01", ns, ev, "f from"))[0])
+    f1 = float(U.strip_units(P.bound(cell.get("xmax"), "100", ns, ev, "f to"))[0])
+    if not 0 < f0 < f1:
+        raise EvalError("Frequencies must be positive, with 'from' below 'to'.")
+    n = P.samples(cell, 400, 3000)
+    fs = np.logspace(math.log10(f0), math.log10(f1), n)
+    fn = sp.lambdify(s, Hn, modules=P.LAMBDIFY_MODULES)
+    with np.errstate(all="ignore"):
+        vals = np.asarray(fn(2j * np.pi * fs), dtype=complex)
+        if vals.shape != fs.shape:
+            vals = np.full(fs.shape, complex(vals))
+        mag = 20 * np.log10(np.abs(vals))
+        phase = np.degrees(np.unwrap(np.angle(vals)))
+    label = sp.latex(H)
+    xs = [float(v) for v in fs]
+    mag_panel = {"series": [{"type": "line", "label": f"\\left|{label}\\right|", "label_plain": "|H| [dB]", "x": xs, "y": P.clean(mag)}],
+                 "xlabel": "f [Hz]", "ylabel": "|H| [dB]", "logx": True, "var": "f", "xrange": [f0, f1]}
+    phase_panel = {"series": [{"type": "line", "label": f"\\angle {label}", "label_plain": "phase [deg]", "x": xs, "y": P.clean(phase)}],
+                   "xlabel": "f [Hz]", "ylabel": "phase [deg]", "logx": True, "var": "f", "xrange": [f0, f1]}
+    return {"series": [], "subplots": [mag_panel, phase_panel], "xlabel": "f [Hz]", "var": "f"}
+
+
+def _root_locus_plot(cell, env, ev):
+    """Plot kind: closed-loop poles of 1 + K G(s) = 0 as K grows, with the open-loop poles and zeros."""
+    from quire.engine import plotting as P
+
+    if not (cell.get("exprs") or "").strip():
+        return {"series": [], "empty": True}
+    Gn, s, ns, G = _tf_from_cell(cell, env, ev)
+    k_max = float(P.bound(cell.get("expr2"), "10", ns, ev, "K max"))
+    n = P.samples(cell, 200, 2000, 20)
+    re, im = _locus(Gn, s, k_max, n)
+    num, den = sp.fraction(sp.cancel(Gn))
+    poles = [complex(r) for r in sp.Poly(den, s).nroots()]
+    zeros = [complex(r) for r in sp.Poly(num, s).nroots()] if sp.Poly(num, s).degree() > 0 else []
+    series = [{"type": "points", "size": 2, "label": r"\text{closed-loop poles, } K \in [0, " + f"{k_max:g}]", "label_plain": "closed-loop poles",
+               "x": re, "y": im},
+              {"type": "points", "marker": "x", "label": r"\text{open-loop poles}", "label_plain": "open-loop poles",
+               "x": [p.real for p in poles], "y": [p.imag for p in poles]}]
+    if zeros:
+        series.append({"type": "points", "marker": "o", "label": r"\text{zeros}", "label_plain": "zeros",
+                       "x": [z.real for z in zeros], "y": [z.imag for z in zeros]})
+    return {"series": series, "xlabel": "Re", "ylabel": "Im", "equal": True}
+
+
 def register(api):
+    api.plot_kind("bode", _bode_plot, label="Bode plot", f1="H(s) =", var="variable", range="f (Hz)",
+                  ph1="1/(s^2 + 0.4 s + 1)", doc="magnitude in dB and phase in degrees against frequency, log axis")
+    api.plot_kind("root_locus", _root_locus_plot, label="root locus", f1="G(s) =", f2="K max", var="variable",
+                  ph1="1/(s (s + 1) (s + 2))", ph2="20", samples="200",
+                  doc="closed-loop poles of 1 + K G(s) = 0 as the gain K grows")
     T = "Control: transfer functions"
     api.function("tf", tf, signature="tf(num, den, s)", doc="transfer function from coefficient lists or expressions",
                  category=T, example="tf([1], [1, 2, 1], s)")

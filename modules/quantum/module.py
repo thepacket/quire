@@ -679,7 +679,38 @@ def teleport_check():
 
 
 # ---------------------------------------------------------------- registration
+
+def _bloch_plot(cell, env, ev):
+    """Plot kind: single-qubit states as arrows on the Bloch sphere."""
+    from quire.engine.parser import parse, split_top
+
+    src = (cell.get("exprs") or "").strip()
+    if not src:
+        return {"series": [], "empty": True}
+    ns = ev.namespace(env)
+    series = [{"type": "sphere", "bloch": True, "label": "", "label_plain": "Bloch sphere"}]
+    for part in [p for p in split_top(src, ",") if p.strip()]:
+        v = _vec(parse(part, ns, ev.unit_names))
+        if v.shape[0] != 2:
+            raise EvalError(f"'{part.strip()}' is not a single-qubit state.")
+        try:
+            a, b = complex(sp.N(v[0])), complex(sp.N(v[1]))
+        except TypeError:
+            names = ", ".join(sorted(str(x) for x in v.free_symbols))
+            raise EvalError(f"'{part.strip()}' still depends on {names}; define them above.") from None
+        n2 = abs(a) ** 2 + abs(b) ** 2
+        if n2 == 0:
+            raise EvalError(f"'{part.strip()}' is the zero vector.")
+        a, b = a / math.sqrt(n2), b / math.sqrt(n2)
+        ab = a.conjugate() * b
+        series.append({"type": "vector3d", "x": 2 * ab.real, "y": 2 * ab.imag, "z": abs(a) ** 2 - abs(b) ** 2,
+                       "label": r"\text{" + part.strip() + "}", "label_plain": part.strip()})
+    return {"series": series, "three": True, "equal": True, "xlabel": "x", "ylabel": "y", "zlabel": "z"}
+
+
 def register(api):
+    api.plot_kind("bloch", _bloch_plot, label="Bloch sphere", f1="state(s)", ph1="bloch_state(pi/3, pi/4), plus()",
+                  renderer="plotly", doc="single-qubit states as arrows on the Bloch sphere")
     St = "Quantum states"
     api.function("ket", ket, signature="ket(0, 1)", doc="basis state |01>", category=St, example="ket(0, 1)")
     api.function("qubit", qubit, signature="qubit(alpha, beta)", doc="alpha |0> + beta |1>", category=St,

@@ -63,7 +63,7 @@ function markdown(text) {
 // ---------- Document model ----------
 function newCell(type) {
   const base = { id: uid(), type };
-  if (type === "plot") return { ...base, kind: "function", exprs: "", expr2: "", var: "", xmin: "", xmax: "", ymin: "", ymax: "", samples: "", logx: false, logy: false };
+  if (type === "plot") return { ...base, kind: "function", exprs: "", expr2: "", expr3: "", annot: "", var: "", xmin: "", xmax: "", ymin: "", ymax: "", samples: "", logx: false, logy: false };
   return { ...base, source: "" };
 }
 function serialize() {
@@ -183,35 +183,58 @@ function buildText(cell, body) {
   show();
 }
 
-const PLOT_KINDS = {
-  function:   { label: "y = f(x)",        f1: "y =",     f2: null,   var: "variable", range: "x", yrange: false, ph1: "sin(x), cos(x)   — or a function name like y(t)", ph2: "" },
-  parametric: { label: "parametric",      f1: "x(t) =",  f2: "y(t) =", var: "parameter", range: "t", yrange: false, ph1: "cos(t)", ph2: "sin(2 t)" },
-  polar:      { label: "polar r(θ)",      f1: "r =",     f2: null,   var: "angle", range: "θ", yrange: false, ph1: "1 + cos(theta)", ph2: "" },
-  scatter:    { label: "scatter (data)",  f1: "x data",  f2: "y data", var: null, range: null, yrange: false, ph1: "[1, 2, 3]", ph2: "[2, 4, 6.5]" },
-  slope:      { label: "slope field",     f1: "dy/dx =", f2: null,   var: "variables", range: "x", yrange: true, ph1: "x - y", ph2: "" },
-  implicit:   { label: "implicit F(x,y)=0", f1: "equation", f2: null, var: "variables", range: "x", yrange: true, ph1: "x^2 + y^2 == 4", ph2: "" },
-  shapes:     { label: "shapes (geometry)", f1: "draw", f2: null, var: null, range: "x", yrange: true, ph1: "circle(point(0, 0), 2), triangle(point(-1, -1), point(2, 0), point(0, 1))", ph2: "" },
+// Core plot kinds. The catalog replaces this table with the server's, which also lists module kinds.
+let PLOT_KINDS = {
+  function:   { label: "y = f(x)", f1: "y =", var: "variable", range: "x", ph1: "sin(x), x^2/10", annot: true, samples: "400" },
+  parametric: { label: "parametric", f1: "x(t) =", f2: "y(t) =", var: "variable", range: "t", ph1: "cos(3 t)", ph2: "sin(2 t)", annot: true, samples: "600" },
+  polar:      { label: "polar r(θ)", f1: "r(θ) =", var: "variable", range: "θ", ph1: "1 + cos(theta)", annot: true, samples: "600" },
+  scatter:    { label: "scatter (data)", f1: "x data", f2: "y data", f3: "y errors", ph1: "[1, 2, 3]", ph2: "[2, 4, 6.5]", annot: true },
+  slope:      { label: "slope field", f1: "dy/dx =", var: "variables", range: "x", yrange: true, ph1: "x - y", samples: "20" },
+  implicit:   { label: "implicit F(x,y)=0", f1: "equation", var: "variables", range: "x", yrange: true, ph1: "x^2 + y^2 == 4", samples: "200", annot: true },
+  shapes:     { label: "shapes (geometry)", f1: "draw", range: "x", yrange: true, ph1: "circle(point(0, 0), 2), triangle(point(-1, -1), point(2, 0), point(0, 1))", annot: true },
+  contour:    { label: "contour F(x,y)", f1: "F(x, y) =", f2: "levels", var: "variables", range: "x", yrange: true, ph1: "sin(x) cos(y)", ph2: "12", renderer: "plotly", samples: "80" },
+  heatmap:    { label: "heatmap F(x,y)", f1: "F(x, y) =", var: "variables", range: "x", yrange: true, ph1: "exp(-(x^2 + y^2)/4)", renderer: "plotly", samples: "80" },
+  surface:    { label: "3D surface z = F(x,y)", f1: "z =", var: "variables", range: "x", yrange: true, ph1: "sin(x) cos(y)", renderer: "plotly", samples: "50" },
+  curve3d:    { label: "3D curve", f1: "x(t), y(t), z(t) =", var: "variable", range: "t", ph1: "cos(t), sin(t), t/5", renderer: "plotly" },
 };
+function applyPlotKinds(list) {
+  if (!list || !list.length) return;
+  const kinds = {};
+  for (const k of list) kinds[k.name] = k;
+  PLOT_KINDS = kinds;
+  for (const [id, el] of state.els) {
+    const cell = state.cells[cellIndex(id)];
+    const sel = cell && cell.type === "plot" ? $("select.kind", el) : null;
+    if (sel) sel.innerHTML = kindOptions(cell.kind);
+  }
+}
+function kindOptions(current) {
+  return Object.entries(PLOT_KINDS).map(([k, v]) => `<option value="${k}" ${k === current ? "selected" : ""}>${esc(v.label)}</option>`).join("")
+    + (PLOT_KINDS[current] ? "" : `<option value="${esc(current)}" selected>${esc(current)}</option>`);
+}
 
 function buildPlot(cell, body) {
   if (!cell.kind) cell.kind = "function";
   const K = PLOT_KINDS[cell.kind] || PLOT_KINDS.function;
+  const plotly = K.renderer === "plotly";
   body.innerHTML = `
     <div class="plot-form">
-      <select class="kind" title="Plot kind">${Object.entries(PLOT_KINDS).map(([k, v]) => `<option value="${k}" ${k === cell.kind ? "selected" : ""}>${v.label}</option>`).join("")}</select>
-      <span class="f1-label">${K.f1}</span><input class="exprs" placeholder="${esc(K.ph1)}" spellcheck="false">
-      <span class="f2-wrap" ${K.f2 ? "" : "hidden"}><span class="f2-label">${K.f2 || ""}</span><input class="expr2" placeholder="${esc(K.ph2)}" spellcheck="false"></span>
-      <span class="range-wrap" ${K.range ? "" : "hidden"}><span>${K.range} from</span><input class="xmin small" spellcheck="false"><span>to</span><input class="xmax small" spellcheck="false"></span>
+      <select class="kind" title="Plot kind">${kindOptions(cell.kind)}</select>
+      <span class="f1-label">${esc(K.f1 || "")}</span><input class="exprs" placeholder="${esc(K.ph1 || "")}" spellcheck="false">
+      <span class="f2-wrap" ${K.f2 ? "" : "hidden"}><span class="f2-label">${esc(K.f2 || "")}</span><input class="expr2" placeholder="${esc(K.ph2 || "")}" spellcheck="false"></span>
+      <span class="f3-wrap" ${K.f3 ? "" : "hidden"}><span class="f3-label">${esc(K.f3 || "")}</span><input class="expr3" placeholder="${esc(K.ph3 || "")}" spellcheck="false"></span>
+      <span class="range-wrap" ${K.range ? "" : "hidden"}><span>${esc(K.range || "")} from</span><input class="xmin small" spellcheck="false"><span>to</span><input class="xmax small" spellcheck="false"></span>
       <span class="yrange-wrap" ${K.yrange ? "" : "hidden"}><span>y from</span><input class="ymin small" spellcheck="false"><span>to</span><input class="ymax small" spellcheck="false"></span>
-      <span class="var-wrap" ${K.var ? "" : "hidden"}><span>${K.var || ""}</span><input class="var tiny" placeholder="auto" spellcheck="false"></span>
-      <span>points</span><input class="samples tiny" placeholder="400" spellcheck="false">
-      <label class="chk"><input type="checkbox" class="logx"> log x</label>
-      <label class="chk"><input type="checkbox" class="logy"> log y</label>
-      <button class="export" title="Download as SVG">SVG</button>
+      <span class="var-wrap" ${K.var ? "" : "hidden"}><span>${esc(K.var || "")}</span><input class="var tiny" placeholder="auto" spellcheck="false"></span>
+      <span>points</span><input class="samples tiny" placeholder="${esc(K.samples || "400")}" spellcheck="false">
+      <label class="chk" ${plotly ? "hidden" : ""}><input type="checkbox" class="logx"> log x</label>
+      <label class="chk" ${plotly ? "hidden" : ""}><input type="checkbox" class="logy"> log y</label>
+      <button class="export" title="Download the picture">${plotly ? "PNG" : "SVG"}</button>
     </div>
-    <div class="plot-wrap"><svg class="plot" viewBox="0 0 700 340" style="display:none"></svg><div class="tip" hidden></div></div>
+    <div class="annot-wrap" ${K.annot ? "" : "hidden"}><span>annotate</span><input class="annot" placeholder='mark(1, "peak"), shade(0, 2), hline(0.5), vline(1), band(2, 3), text(2, 1, "note")' spellcheck="false"></div>
+    <div class="plot-wrap"><div class="panels"></div><div class="plotly-box" hidden></div><div class="tip" hidden></div></div>
     <div class="legend"></div><div class="err"></div>`;
-  for (const key of ["exprs", "expr2", "xmin", "xmax", "ymin", "ymax", "var", "samples"]) {
+  for (const key of ["exprs", "expr2", "expr3", "xmin", "xmax", "ymin", "ymax", "var", "samples", "annot"]) {
     const inp = $(`input.${key}`, body);
     inp.value = cell[key] || "";
     inp.addEventListener("input", () => { cell[key] = inp.value; touch(); });
@@ -225,20 +248,23 @@ function buildPlot(cell, body) {
   }
   $("select.kind", body).addEventListener("change", ev => {
     cell.kind = ev.target.value;
-    const el = state.els.get(cell.id);
     buildPlot(cell, body);
     touch();
   });
-  $("button.export", body).addEventListener("click", () => exportSvg(cell));
+  $("button.export", body).addEventListener("click", () => exportPlot(cell));
   body._view = { hidden: new Set() };
 }
 
-function exportSvg(cell) {
-  const el = state.els.get(cell.id); const svg = $("svg.plot", el); if (!svg || svg.style.display === "none") return;
+function exportPlot(cell) {
+  const el = state.els.get(cell.id); if (!el) return;
+  const name = (state.title || "plot").replace(/[^\w-]+/g, "_") + "-plot";
+  const box = $(".plotly-box", el);
+  if (box && !box.hidden && window.Plotly) { Plotly.downloadImage(box, { format: "png", width: 1000, height: 640, filename: name }); return; }
+  const svg = $(".panels svg", el); if (!svg) return;
   const src = `<?xml version="1.0" encoding="UTF-8"?>\n` + svg.outerHTML.replace("<svg ", `<svg xmlns="http://www.w3.org/2000/svg" `);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([src], { type: "image/svg+xml" }));
-  a.download = (state.title || "plot").replace(/[^\w-]+/g, "_") + "-plot.svg";
+  a.download = name + ".svg";
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -338,7 +364,7 @@ function renderResult(res) {
       const notes = (o.notes || []).map(n => `<div class="note">${esc(n)}</div>`).join("");
       const reading = o.reading ? `<div class="reading"><span class="lbl">read as</span>${katexHtml(o.reading)}</div>` : "";
       const steps = o.steps ? `<div class="steps">${o.steps_title ? `<div class="steps-title">${esc(o.steps_title)}</div>` : ""}${o.steps.map((st, i) => `<div class="step"><span class="step-n">${i + 1}.</span><span class="step-text">${esc(st.text)}</span>${st.latex ? `<span class="step-math">${katexHtml(st.latex)}</span>` : ""}</div>`).join("")}</div>` : "";
-      const sl = o.slider ? `<div class="slider-row"><input type="range" class="slider" data-line="${o.slider.line}" min="${o.slider.min}" max="${o.slider.max}" step="${o.slider.step || (o.slider.max - o.slider.min) / 200}" value="${o.slider.value}"><span class="slider-val">${fmtVal(o.slider.value)}</span></div>` : "";
+      const sl = o.slider ? `<div class="slider-row"><input type="range" class="slider" data-line="${o.slider.line}" data-name="${esc(o.slider.name || "")}" min="${o.slider.min}" max="${o.slider.max}" step="${o.slider.step || (o.slider.max - o.slider.min) / 200}" value="${o.slider.value}"><span class="slider-val">${fmtVal(o.slider.value)}</span></div>` : "";
       return `${reading}${steps}<div class="out-line">${h}</div>${sl}${notes}`;
     }).join("");
     for (const sl of out.querySelectorAll("input.slider")) sl.addEventListener("input", () => onSlider(cell, el, sl));
@@ -360,8 +386,36 @@ function onSlider(cell, el, sl) {
   const ta = $("textarea.src", el); if (ta && document.activeElement !== ta) ta.value = cell.source;
   sl.nextElementSibling.textContent = fmtVal(v);
   setDirty(true);
+  fastRedraw();
   clearTimeout(state.evalTimer);
-  state.evalTimer = setTimeout(evaluateNow, 40);
+  state.evalTimer = setTimeout(evaluateNow, 120);
+}
+function sliderValues() {
+  const m = {};
+  for (const sl of document.querySelectorAll("input.slider[data-name]")) if (sl.dataset.name) m[sl.dataset.name] = +sl.value;
+  return m;
+}
+// Series that depend on sliders arrive compiled to JavaScript; redraw them at once while dragging.
+function fastRedraw() {
+  const vals = sliderValues();
+  for (const [id, res] of state.results) {
+    const cell = state.cells[cellIndex(id)];
+    if (!cell || cell.type !== "plot" || !res.ok || !res.series) continue;
+    let changed = false;
+    for (const s of res.series) {
+      if (!s.js) continue;
+      try {
+        if (!s._fns) s._fns = s.js.map(code => new Function(res.var || "x", ...s.params, "return " + code));
+        const args = s.params.map(p => vals[p]);
+        if (args.some(v => v === undefined || !Number.isFinite(v))) continue;
+        const fin = v => Number.isFinite(v) ? v : null;
+        if (s.grid) { s.x = s.grid.map(t => fin(s._fns[0](t, ...args))); s.y = s.grid.map(t => fin(s._fns[1](t, ...args))); }
+        else s.y = s.x.map(x => x === null ? null : fin(s._fns[0](x, ...args)));
+        changed = true;
+      } catch (e) { s.js = null; }
+    }
+    if (changed) drawPlot(state.els.get(id), res);
+  }
 }
 
 // ---------- Plotting (SVG) ----------
@@ -386,17 +440,28 @@ function fmtTick(v, log) {
   return String(+v.toPrecision(5));
 }
 function fmtVal(v) { return Math.abs(v) >= 1e5 || (Math.abs(v) < 1e-3 && v !== 0) ? v.toExponential(4) : String(+v.toPrecision(6)); }
+const SVG2D = new Set(["line", "points", "segments"]);
+
+function interpSeries(s, x) {
+  for (let i = 0; i < s.x.length - 1; i++) {
+    const x1 = s.x[i], x2 = s.x[i + 1], y1 = s.y[i], y2 = s.y[i + 1];
+    if (x1 === null || x2 === null || y1 === null || y2 === null) continue;
+    if (x1 <= x && x <= x2) return y1 + (x - x1) / ((x2 - x1) || 1) * (y2 - y1);
+  }
+  return null;
+}
 
 function plotGeometry(cell, res, view) {
-  const logx = !!cell.logx, logy = !!cell.logy;
+  const logx = !!cell.logx || !!res.logx, logy = !!cell.logy || !!res.logy;
   const tx = v => logx ? (v > 0 ? Math.log10(v) : NaN) : v, ty = v => logy ? (v > 0 ? Math.log10(v) : NaN) : v;
   let xlo = Infinity, xhi = -Infinity, ylo = Infinity, yhi = -Infinity;
   const consider = (x, y) => { x = tx(x); y = ty(y); if (Number.isFinite(x)) { xlo = Math.min(xlo, x); xhi = Math.max(xhi, x); } if (Number.isFinite(y)) { ylo = Math.min(ylo, y); yhi = Math.max(yhi, y); } };
   for (const s of res.series) {
-    if (view.hidden.has(s.label_plain)) continue;
+    if (!SVG2D.has(s.type) || view.hidden.has(s.label_plain)) continue;
     if (s.type === "segments") for (const g of s.segments) { consider(g[0], g[1]); consider(g[2], g[3]); }
-    else for (let i = 0; i < s.x.length; i++) if (s.x[i] !== null && s.y[i] !== null) consider(s.x[i], s.y[i]);
+    else for (let i = 0; i < s.x.length; i++) if (s.x[i] !== null && s.y[i] !== null) { consider(s.x[i], s.y[i]); if (s.yerr) { consider(s.x[i], s.y[i] - s.yerr[i]); consider(s.x[i], s.y[i] + s.yerr[i]); } }
   }
+  for (const a of (res.annotations || [])) { if (a.type === "point" || a.type === "text") consider(a.x, a.y); if (a.type === "hline") consider(NaN, a.y); if (a.type === "vline") consider(a.x, NaN); }
   if (res.xrange) { xlo = tx(res.xrange[0]); xhi = tx(res.xrange[1]); }
   if (res.yrange) { ylo = ty(res.yrange[0]); yhi = ty(res.yrange[1]); }
   if (res.ysuggest && !logy && !res.yrange) { ylo = Math.max(ylo, res.ysuggest[0]); yhi = Math.min(yhi, res.ysuggest[1]); }
@@ -420,12 +485,32 @@ function plotGeometry(cell, res, view) {
 }
 
 function drawPlot(el, res) {
-  const svg = $("svg.plot", el), legend = $(".legend", el), body = $(".body", el);
+  const body = $(".body", el), legend = $(".legend", el), panelsEl = $(".panels", el), box = $(".plotly-box", el);
   const cell = state.cells[cellIndex(el.dataset.id)];
   const view = body._view || (body._view = { hidden: new Set() });
-  if (!res.ok || !res.series || !res.series.length) { svg.style.display = "none"; legend.innerHTML = ""; return; }
+  const panels = res.ok ? (res.subplots || [res]).filter(p => p.series && p.series.length) : [];
+  if (!panels.length) { panelsEl.innerHTML = ""; box.hidden = true; legend.innerHTML = ""; return; }
+  if (res.renderer === "plotly") { panelsEl.innerHTML = ""; drawPlotly(el, cell, res, legend); return; }
+  box.hidden = true;
+  while (panelsEl.children.length > panels.length) panelsEl.lastChild.remove();
+  while (panelsEl.children.length < panels.length) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "plot"); svg.setAttribute("viewBox", "0 0 700 340");
+    panelsEl.appendChild(svg);
+  }
+  const all = [];
+  panels.forEach((p, i) => {
+    const pres = Object.assign({}, p, { id: `${res.id}-${i}`, annotations: i === 0 ? res.annotations : null });
+    drawSvg(panelsEl.children[i], el, cell, pres, view, all.length);
+    all.push(...p.series);
+  });
+  legend.innerHTML = all.map((s, k) => s.label === "" ? "" : `<span class="lg ${view.hidden.has(s.label_plain) ? "off" : ""}" data-label="${esc(s.label_plain)}" title="Click to hide or show"><span class="swatch" style="background:${PALETTE[k % PALETTE.length]}"></span>${katexHtml(s.label)}</span>`).join("");
+  legend.onclick = ev => { const lg = ev.target.closest(".lg"); if (!lg) return; const key = lg.dataset.label; if (view.hidden.has(key)) view.hidden.delete(key); else view.hidden.add(key); drawPlot(el, res); };
+}
+
+function drawSvg(svg, el, cell, res, view, offset) {
   const g0 = plotGeometry(cell, res, view);
-  if (!g0) { svg.style.display = "none"; legend.innerHTML = `<span class="err">Nothing to draw: all values are undefined on this range.</span>`; return; }
+  if (!g0) { svg.innerHTML = `<text x="350" y="170" text-anchor="middle" font-size="13" fill="#c0392b">Nothing to draw: all values are undefined on this range.</text>`; svg.onmousemove = null; return; }
   const { W, H, ml, mr, mt, mb, xlo, xhi, ylo, yhi, sx, sy, logx, logy } = g0;
   let g = "";
   for (const t of (logx ? logTicks(xlo, xhi) : niceTicks(xlo, xhi, 8))) {
@@ -440,13 +525,56 @@ function drawPlot(el, res) {
   if (!logx && xlo < 0 && xhi > 0) g += `<line x1="${sx(0)}" y1="${mt}" x2="${sx(0)}" y2="${H - mb}" stroke="#999"/>`;
   g += `<rect x="${ml}" y="${mt}" width="${W - ml - mr}" height="${H - mt - mb}" fill="none" stroke="#ccc"/>`;
   const clip = `clip-path="url(#clip-${res.id})"`;
+  const baseY = (!logy && ylo < 0 && yhi > 0) ? sy(0) : (H - mb);
+  // shaded regions and bands go under the curves
+  for (const a of (res.annotations || [])) {
+    if (a.type === "band") {
+      g += `<rect x="${sx(a.x0).toFixed(1)}" y="${mt}" width="${(sx(a.x1) - sx(a.x0)).toFixed(1)}" height="${H - mt - mb}" fill="#8a97ab" fill-opacity="0.14" ${clip}/>`;
+      if (a.label) g += `<text x="${((sx(a.x0) + sx(a.x1)) / 2).toFixed(1)}" y="${mt + 14}" font-size="11.5" text-anchor="middle" fill="#444">${esc(a.label)}</text>`;
+    } else if (a.type === "shade") {
+      const s = res.series[a.series]; if (!s) continue;
+      const ya = interpSeries(s, a.x0), yb = interpSeries(s, a.x1);
+      let d = ya === null ? "" : `M${sx(a.x0).toFixed(1)} ${sy(ya).toFixed(1)} `;
+      s.x.forEach((x, i) => { const y = s.y[i]; if (x === null || y === null || x < a.x0 || x > a.x1) return; d += `${d ? "L" : "M"}${sx(x).toFixed(1)} ${sy(y).toFixed(1)} `; });
+      if (yb !== null) d += `L${sx(a.x1).toFixed(1)} ${sy(yb).toFixed(1)} `;
+      if (!d) continue;
+      d += `L${sx(a.x1).toFixed(1)} ${baseY.toFixed(1)} L${sx(a.x0).toFixed(1)} ${baseY.toFixed(1)} Z`;
+      g += `<path d="${d}" fill="${PALETTE[(a.series + offset) % PALETTE.length]}" fill-opacity="0.18" stroke="none" ${clip}/>`;
+      if (a.label) g += `<text x="${((sx(a.x0) + sx(a.x1)) / 2).toFixed(1)}" y="${(baseY - 6).toFixed(1)}" font-size="11.5" text-anchor="middle" fill="#444">${esc(a.label)}</text>`;
+    }
+  }
   res.series.forEach((s, k) => {
-    if (view.hidden.has(s.label_plain)) return;
-    const color = PALETTE[k % PALETTE.length];
+    if (!SVG2D.has(s.type) || view.hidden.has(s.label_plain)) return;
+    const color = PALETTE[(k + offset) % PALETTE.length];
     if (s.type === "points") {
-      g += `<g ${clip}>` + s.x.map((x, i) => (x === null || s.y[i] === null) ? "" : `<circle cx="${sx(x).toFixed(1)}" cy="${sy(s.y[i]).toFixed(1)}" r="3.5" fill="${color}"/>`).join("") + "</g>";
+      let h = `<g ${clip}>`;
+      const r = s.size || 3.5;
+      s.x.forEach((x, i) => {
+        const y = s.y[i]; if (x === null || y === null || (logx && x <= 0) || (logy && y <= 0)) return;
+        const px = sx(x), py = sy(y);
+        if (s.yerr && s.yerr[i]) {
+          const y1 = sy(y - s.yerr[i]), y2 = sy(y + s.yerr[i]);
+          h += `<line x1="${px.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${px.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="1.2"/>`;
+          h += `<line x1="${(px - 4).toFixed(1)}" y1="${y1.toFixed(1)}" x2="${(px + 4).toFixed(1)}" y2="${y1.toFixed(1)}" stroke="${color}" stroke-width="1.2"/><line x1="${(px - 4).toFixed(1)}" y1="${y2.toFixed(1)}" x2="${(px + 4).toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="1.2"/>`;
+        }
+        if (s.marker === "x") h += `<path d="M${(px - 4.5).toFixed(1)} ${(py - 4.5).toFixed(1)}L${(px + 4.5).toFixed(1)} ${(py + 4.5).toFixed(1)}M${(px - 4.5).toFixed(1)} ${(py + 4.5).toFixed(1)}L${(px + 4.5).toFixed(1)} ${(py - 4.5).toFixed(1)}" stroke="${color}" stroke-width="2" fill="none"/>`;
+        else if (s.marker === "o") h += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="5" fill="#fff" stroke="${color}" stroke-width="2"/>`;
+        else h += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${r}" fill="${color}"/>`;
+        if (s.labels && s.labels[i]) h += `<text x="${(px + 7).toFixed(1)}" y="${(py - 7).toFixed(1)}" font-size="12.5" fill="${color}">${esc(s.labels[i])}</text>`;
+      });
+      g += h + "</g>";
     } else if (s.type === "segments") {
-      g += `<g ${clip} stroke="${color}" stroke-width="1.4">` + s.segments.map(q => `<line x1="${sx(q[0]).toFixed(1)}" y1="${sy(q[1]).toFixed(1)}" x2="${sx(q[2]).toFixed(1)}" y2="${sy(q[3]).toFixed(1)}"/>`).join("") + "</g>";
+      let h = `<g ${clip} stroke="${color}" stroke-width="1.4" fill="${color}">`;
+      for (const q of s.segments) {
+        const x1 = sx(q[0]), y1 = sy(q[1]), x2 = sx(q[2]), y2 = sy(q[3]);
+        if (![x1, y1, x2, y2].every(Number.isFinite)) continue;
+        h += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+        if (s.arrows) {
+          const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, ax = x2 - ux * 5, ay = y2 - uy * 5;
+          h += `<polygon points="${x2.toFixed(1)},${y2.toFixed(1)} ${(ax - uy * 2.5).toFixed(1)},${(ay + ux * 2.5).toFixed(1)} ${(ax + uy * 2.5).toFixed(1)},${(ay - ux * 2.5).toFixed(1)}" stroke="none"/>`;
+        }
+      }
+      g += h + "</g>";
     } else {
       let d = "", pen = false;
       s.x.forEach((x, i) => {
@@ -458,41 +586,52 @@ function drawPlot(el, res) {
       g += `<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" ${clip}/>`;
     }
   });
+  for (const a of (res.annotations || [])) {
+    if (a.type === "hline") {
+      const py = sy(a.y); if (!Number.isFinite(py)) continue;
+      g += `<line x1="${ml}" y1="${py.toFixed(1)}" x2="${W - mr}" y2="${py.toFixed(1)}" stroke="#555" stroke-dasharray="5 4" ${clip}/>`;
+      if (a.label) g += `<text x="${W - mr - 4}" y="${(py - 5).toFixed(1)}" font-size="11.5" text-anchor="end" fill="#444">${esc(a.label)}</text>`;
+    } else if (a.type === "vline") {
+      const px = sx(a.x); if (!Number.isFinite(px)) continue;
+      g += `<line x1="${px.toFixed(1)}" y1="${mt}" x2="${px.toFixed(1)}" y2="${H - mb}" stroke="#555" stroke-dasharray="5 4" ${clip}/>`;
+      if (a.label) g += `<text x="${(px + 5).toFixed(1)}" y="${mt + 14}" font-size="11.5" fill="#444">${esc(a.label)}</text>`;
+    } else if (a.type === "point") {
+      const px = sx(a.x), py = sy(a.y); if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+      g += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="4.5" fill="#fff" stroke="#333" stroke-width="1.8"/>`;
+      g += `<text x="${(px + 8).toFixed(1)}" y="${(py - 8).toFixed(1)}" font-size="12.5" fill="#222">${esc(a.label || "")}</text>`;
+    } else if (a.type === "text") {
+      const px = sx(a.x), py = sy(a.y); if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+      g += `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" font-size="12.5" text-anchor="middle" fill="#222">${esc(a.label || "")}</text>`;
+    }
+  }
   g += `<text x="${(ml + W - mr) / 2}" y="${H - 8}" font-size="12" text-anchor="middle" fill="#444">${esc(res.xlabel || "")}</text>`;
   if (res.ylabel) g += `<text x="14" y="${(mt + H - mb) / 2}" font-size="12" text-anchor="middle" fill="#444" transform="rotate(-90 14 ${(mt + H - mb) / 2})">${esc(res.ylabel)}</text>`;
   g += `<g class="cursor" hidden><line class="vx" y1="${mt}" y2="${H - mb}" stroke="#888" stroke-dasharray="3 3"/><g class="dots"></g></g>`;
   svg.innerHTML = `<defs><clipPath id="clip-${res.id}"><rect x="${ml}" y="${mt}" width="${W - ml - mr}" height="${H - mt - mb}"/></clipPath></defs>${g}`;
-  svg.style.display = "";
-  legend.innerHTML = res.series.map((s, k) => `<span class="lg ${view.hidden.has(s.label_plain) ? "off" : ""}" data-label="${esc(s.label_plain)}" title="Click to hide or show"><span class="swatch" style="background:${PALETTE[k % PALETTE.length]}"></span>${katexHtml(s.label)}</span>`).join("");
-  legend.onclick = ev => { const lg = ev.target.closest(".lg"); if (!lg) return; const key = lg.dataset.label; if (view.hidden.has(key)) view.hidden.delete(key); else view.hidden.add(key); drawPlot(el, res); };
-  attachPlotInteraction(el, cell, res, g0);
+  attachPlotInteraction(svg, el, cell, res, g0, view, offset);
 }
 
-function attachPlotInteraction(el, cell, res, geo) {
-  const svg = $("svg.plot", el), tip = $(".tip", el), body = $(".body", el);
+function attachPlotInteraction(svg, el, cell, res, geo, view, offset) {
+  const tip = $(".tip", el);
   const toSvg = ev => { const r = svg.getBoundingClientRect(); return { px: (ev.clientX - r.left) * geo.W / r.width, py: (ev.clientY - r.top) * geo.H / r.height }; };
   const inside = p => p.px >= geo.ml && p.px <= geo.W - geo.mr && p.py >= geo.mt && p.py <= geo.H - geo.mb;
   let drag = null;
   svg.onmousemove = ev => {
     const p = toSvg(ev);
-    if (drag) {
-      const dx = geo.ix(p.px) - geo.ix(drag.px);
-      if (drag.moved || Math.abs(p.px - drag.px) > 3) { drag.moved = true; }
-      return;
-    }
+    if (drag) { if (drag.moved || Math.abs(p.px - drag.px) > 3) drag.moved = true; return; }
     const cursor = $(".cursor", svg);
     if (!inside(p) || !res.series.some(s => s.type === "line")) { cursor.hidden = true; tip.hidden = true; return; }
     const x = geo.ix(p.px);
     const rows = [];
     let dots = "";
     res.series.forEach((s, k) => {
-      if (s.type !== "line" || body._view.hidden.has(s.label_plain)) return;
+      if (s.type !== "line" || view.hidden.has(s.label_plain)) return;
       let best = -1, bd = Infinity;
       for (let i = 0; i < s.x.length; i++) { if (s.x[i] === null || s.y[i] === null) continue; const d = Math.abs(s.x[i] - x); if (d < bd) { bd = d; best = i; } }
       if (best < 0) return;
-      const y = s.y[best];
-      rows.push(`<span class="swatch" style="background:${PALETTE[k % PALETTE.length]}"></span>${esc(s.label_plain)} = <b>${fmtVal(y)}</b>`);
-      dots += `<circle cx="${geo.sx(s.x[best])}" cy="${geo.sy(y)}" r="4" fill="${PALETTE[k % PALETTE.length]}" stroke="#fff"/>`;
+      const y = s.y[best], color = PALETTE[(k + offset) % PALETTE.length];
+      rows.push(`<span class="swatch" style="background:${color}"></span>${esc(s.label_plain)} = <b>${fmtVal(y)}</b>`);
+      dots += `<circle cx="${geo.sx(s.x[best])}" cy="${geo.sy(y)}" r="4" fill="${color}" stroke="#fff"/>`;
     });
     if (!rows.length) { cursor.hidden = true; tip.hidden = true; return; }
     cursor.hidden = false;
@@ -500,13 +639,13 @@ function attachPlotInteraction(el, cell, res, geo) {
     $(".dots", cursor).innerHTML = dots;
     tip.hidden = false;
     tip.innerHTML = `<div>${esc(res.var || "x")} = <b>${fmtVal(x)}</b></div>` + rows.map(r => `<div>${r}</div>`).join("");
-    const wrap = svg.parentElement.getBoundingClientRect();
+    const wrap = $(".plot-wrap", el).getBoundingClientRect();
     const left = ev.clientX - wrap.left + 14, top = ev.clientY - wrap.top + 10;
     tip.style.left = Math.min(left, wrap.width - tip.offsetWidth - 8) + "px"; tip.style.top = top + "px";
   };
   svg.onmouseleave = () => { const c = $(".cursor", svg); if (c) c.hidden = true; tip.hidden = true; drag = null; };
   const setRange = (lo, hi) => {
-    if (!PLOT_KINDS[cell.kind].range) return;
+    if (!(PLOT_KINDS[cell.kind] || {}).range) return;
     const f = v => String(+v.toPrecision(6));
     cell.xmin = f(lo); cell.xmax = f(hi);
     $("input.xmin", el).value = cell.xmin; $("input.xmax", el).value = cell.xmax;
@@ -530,10 +669,86 @@ function attachPlotInteraction(el, cell, res, geo) {
   if (!cell._orig) cell._orig = { xmin: cell.xmin, xmax: cell.xmax };
 }
 
+// ---------- Plotting (Plotly, loaded on first use: contour, heatmap, surfaces, 3D) ----------
+let plotlyLoading = null;
+function ensurePlotly() {
+  if (window.Plotly) return Promise.resolve();
+  if (!plotlyLoading) plotlyLoading = new Promise((resolve, reject) => {
+    const sc = document.createElement("script");
+    sc.src = "/vendor/plotly.min.js";
+    sc.onload = resolve; sc.onerror = () => { plotlyLoading = null; reject(new Error("load failed")); };
+    document.head.appendChild(sc);
+  });
+  return plotlyLoading;
+}
+function sphereTraces() {
+  const x = [], y = [], z = [];
+  for (let j = 0; j <= 18; j++) {
+    const v = j / 18 * Math.PI, rx = [], ry = [], rz = [];
+    for (let i = 0; i <= 36; i++) { const u = i / 36 * 2 * Math.PI; rx.push(Math.sin(v) * Math.cos(u)); ry.push(Math.sin(v) * Math.sin(u)); rz.push(Math.cos(v)); }
+    x.push(rx); y.push(ry); z.push(rz);
+  }
+  const traces = [{ type: "surface", x, y, z, opacity: 0.16, showscale: false, colorscale: [[0, "#9db4d6"], [1, "#9db4d6"]], hoverinfo: "skip",
+                    contours: { x: { show: false }, y: { show: false }, z: { show: false } } }];
+  const circle = (fx, fy, fz) => { const cx = [], cy = [], cz = []; for (let i = 0; i <= 72; i++) { const t = i / 72 * 2 * Math.PI; cx.push(fx(t)); cy.push(fy(t)); cz.push(fz(t)); } return { type: "scatter3d", mode: "lines", x: cx, y: cy, z: cz, line: { color: "#8a97ab", width: 1.5 }, hoverinfo: "skip" }; };
+  traces.push(circle(Math.cos, Math.sin, () => 0), circle(Math.cos, () => 0, Math.sin), circle(() => 0, Math.cos, Math.sin));
+  for (const [ax, labels] of [["x", ["|+⟩", "|−⟩"]], ["y", ["|+i⟩", "|−i⟩"]], ["z", ["|0⟩", "|1⟩"]]]) {
+    const line = { x: [0, 0], y: [0, 0], z: [0, 0] }; line[ax] = [-1.15, 1.15];
+    traces.push({ type: "scatter3d", mode: "lines", ...line, line: { color: "#666", width: 2 }, hoverinfo: "skip" });
+    const txt = { x: [0, 0], y: [0, 0], z: [0, 0] }; txt[ax] = [1.3, -1.3];
+    traces.push({ type: "scatter3d", mode: "text", ...txt, text: labels, textfont: { size: 13, color: "#333" }, hoverinfo: "skip" });
+  }
+  return traces;
+}
+async function drawPlotly(el, cell, res, legend) {
+  const box = $(".plotly-box", el); box.hidden = false;
+  try { await ensurePlotly(); } catch (e) { $(".err", el).textContent = "The contour/3D renderer (Plotly) could not be loaded."; return; }
+  if (state.results.get(cell.id) !== res) return; // superseded while loading
+  const traces = []; let three = !!res.three;
+  const xl = res.xlabel || "x", yl = res.ylabel || "y";
+  const colorbar = { thickness: 12, len: 0.75, title: { text: res.zlabel || "" } };
+  res.series.forEach((s, k) => {
+    const color = PALETTE[k % PALETTE.length], name = s.label_plain || "";
+    if (s.type === "grid") {
+      const base = { x: s.x, y: s.y, z: s.z, colorscale: "Viridis", colorbar, name, hovertemplate: `${esc(xl)} = %{x:.4g}<br>${esc(yl)} = %{y:.4g}<br>z = %{z:.4g}<extra></extra>` };
+      if (s.style === "surface") { three = true; traces.push({ type: "surface", ...base }); }
+      else if (s.style === "heatmap") traces.push({ type: "heatmap", ...base, zsmooth: "best" });
+      else {
+        const t = { type: "contour", ...base, contours: { coloring: "heatmap", showlabels: true, labelfont: { size: 10, color: "#222" } }, line: { width: 1 } };
+        if (Array.isArray(res.levels) && res.levels.length > 1) { const lv = [...res.levels].sort((a, b) => a - b); t.autocontour = false; t.contours.start = lv[0]; t.contours.end = lv[lv.length - 1]; t.contours.size = (lv[lv.length - 1] - lv[0]) / (lv.length - 1); }
+        else if (res.levels) { t.autocontour = false; const zs = s.z.flat().filter(v => v !== null); const lo = Math.min(...zs), hi = Math.max(...zs); t.contours.start = lo; t.contours.end = hi; t.contours.size = (hi - lo) / res.levels || 1; }
+        traces.push(t);
+      }
+    } else if (s.type === "line3d") { three = true; traces.push({ type: "scatter3d", mode: "lines", x: s.x, y: s.y, z: s.z, line: { color, width: 4 }, name }); }
+    else if (s.type === "points3d") { three = true; traces.push({ type: "scatter3d", mode: "markers", x: s.x, y: s.y, z: s.z, marker: { color, size: 3 }, name }); }
+    else if (s.type === "sphere") { three = true; traces.push(...sphereTraces()); }
+    else if (s.type === "vector3d") { three = true; traces.push({ type: "scatter3d", mode: "lines+markers", x: [0, s.x], y: [0, s.y], z: [0, s.z], line: { color, width: 7 }, marker: { size: [1, 7], color }, name, hovertemplate: `${esc(name)}<br>(%{x:.3f}, %{y:.3f}, %{z:.3f})<extra></extra>` }); }
+    else if (s.type === "line") traces.push({ type: "scatter", mode: "lines", x: s.x, y: s.y, line: { color, width: 2 }, name });
+    else if (s.type === "points") traces.push({ type: "scatter", mode: "markers", x: s.x, y: s.y, marker: { color, size: 6 }, name });
+  });
+  const layout = { margin: { l: 55, r: 20, t: 10, b: 45 }, height: three ? 460 : 380, paper_bgcolor: "#fff", plot_bgcolor: "#fff",
+                   font: { family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif", size: 12 }, showlegend: false, hovermode: "closest" };
+  if (three) {
+    layout.margin = { l: 0, r: 0, t: 0, b: 0 };
+    layout.scene = { xaxis: { title: { text: xl } }, yaxis: { title: { text: yl } }, zaxis: { title: { text: res.zlabel || "z" } }, aspectmode: res.equal ? "cube" : "auto" };
+    if (box._camera) layout.scene.camera = box._camera;
+  } else {
+    layout.xaxis = { title: { text: res.xlabel || "" }, range: res.xrange || undefined, zeroline: false };
+    layout.yaxis = { title: { text: res.ylabel || "" }, range: res.yrange || undefined, zeroline: false };
+    if (res.equal) layout.yaxis.scaleanchor = "x";
+  }
+  await Plotly.react(box, traces, layout, { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d", "toImage"] });
+  if (!box._wired) { box._wired = true; box.on("plotly_relayout", ev => { if (ev["scene.camera"]) box._camera = ev["scene.camera"]; }); }
+  legend.innerHTML = res.series.map((s, k) => ({ s, k })).filter(({ s }) => s.label && s.type !== "sphere")
+    .map(({ s, k }) => `<span class="lg">${s.type === "grid" ? "" : `<span class="swatch" style="background:${PALETTE[k % PALETTE.length]}"></span>`}${katexHtml(s.label)}</span>`).join("");
+  legend.onclick = null;
+}
+
 // ---------- Reference panel ----------
 async function loadCatalog(reload = false) {
   const r = await fetch(reload ? "/api/reload" : "/api/catalog", { method: reload ? "POST" : "GET" });
   state.catalog = await r.json();
+  applyPlotKinds(state.catalog.plot_kinds);
   renderCatalog();
   if (reload) evaluateNow();
 }
@@ -570,13 +785,25 @@ function renderCatalog() {
     for (const e of items) {
       const insert = e.example || (e.kind === "function" ? e.signature : e.name);
       const shown = e.kind === "function" || e.kind === "syntax" ? e.signature : e.name;
-      h += `<div class="ref-item" data-insert="${esc(insert)}" title="Click to insert">
+      h += `<div class="ref-item" data-insert="${esc(insert)}" ${e.kind === "plot" ? `data-plot="${esc(e.example)}"` : ""} title="${e.kind === "plot" ? "Click to add a plot cell of this kind" : "Click to insert"}">
         <span class="sig">${esc(shown)}${e.module !== "core" ? ` <span class="mod">${esc(e.module)}</span>` : ""}</span>
         <span class="doc">${esc(e.doc)}</span></div>`;
     }
     h += `</div>`;
   }
   $("#ref-list").innerHTML = h || `<div class="ref-cat">No matches</div>`;
+}
+
+function addPlotCell(kind) {
+  const c = newCell("plot"); c.kind = kind;
+  const K = PLOT_KINDS[kind];
+  if (K) { c.exprs = K.ph1 || ""; c.expr2 = K.ph2 || ""; c.expr3 = K.ph3 || ""; }
+  let at = state.cells.length;
+  const active = state.activeInput && document.body.contains(state.activeInput) ? state.activeInput.closest(".cell") : null;
+  if (active) at = cellIndex(active.dataset.id) + 1;
+  state.cells.splice(at, 0, c);
+  mountCells(); touch();
+  const el = state.els.get(c.id); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
 function insertAtCursor(text) {
@@ -685,7 +912,7 @@ function acClose() { if (acBox) { acBox.remove(); acBox = null; } acItems = []; 
 function acCandidates(prefix, afterArrow) {
   if (!state.catalog) return [];
   const p = prefix.toLowerCase();
-  const pool = state.catalog.entries.filter(e => afterArrow ? e.kind === "unit" : e.kind !== "syntax");
+  const pool = state.catalog.entries.filter(e => afterArrow ? e.kind === "unit" : (e.kind !== "syntax" && e.kind !== "plot"));
   const starts = pool.filter(e => e.name.toLowerCase().startsWith(p));
   const contains = pool.filter(e => !e.name.toLowerCase().startsWith(p) && (e.name.toLowerCase().includes(p) || e.doc.toLowerCase().includes(p)));
   return [...starts, ...contains].slice(0, 8);
@@ -765,7 +992,8 @@ function init() {
       if (state.refCollapsed.has(c)) state.refCollapsed.delete(c); else state.refCollapsed.add(c);
       saveCollapsed(state.refCollapsed); renderCatalog(); return;
     }
-    const it = ev.target.closest(".ref-item"); if (it) insertAtCursor(it.dataset.insert);
+    const it = ev.target.closest(".ref-item"); if (!it) return;
+    if (it.dataset.plot) addPlotCell(it.dataset.plot); else insertAtCursor(it.dataset.insert);
   });
   $("#ref-modules").addEventListener("click", ev => {
     const b = ev.target.closest("button[data-all]"); if (!b || !state.catalog) return;

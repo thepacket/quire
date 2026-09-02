@@ -116,20 +116,39 @@ Pick a kind, then fill in the fields:
 | `y = f(x)` | one or more expressions separated by commas (`sin(x), cos(x)` or `y(t)`), a range, optional variable |
 | parametric | `x(t)`, `y(t)`, parameter range |
 | polar | `r(θ)`, angle range |
-| scatter | x data and y data, any expressions that give lists |
+| scatter | x data and y data, any expressions that give lists; optional y errors (a list or one number) for error bars |
 | slope field | `dy/dx = f(x, y)`, x and y ranges, density |
 | implicit | an equation `F(x, y) == c`, x and y ranges |
+| shapes | geometry objects (`circle(...)`, `triangle(...)`, named points are labelled) |
+| contour, heatmap | `F(x, y)` on a grid, the number of levels; also a solution such as `u(x, t)` from `heat_fdm` |
+| 3D surface | `z = F(x, y)`, drag to rotate |
+| 3D curve | `x(t), y(t), z(t)` |
+| Bloch sphere | single-qubit states as arrows (quantum module) |
+| phase portrait | `dx/dt, dy/dt`: direction field, trajectories and equilibria (ode module) |
+| Bode plot, root locus | a transfer function in `s` (control module) |
 
 Ranges accept units and definitions (`0 s` to `5 tau`); the variable is inferred when
 there is only one unknown; all series must share units and axes are labelled with the SI
 unit. Function plots are sampled adaptively and broken at discontinuities, so `tan x` has
 gaps rather than walls and the visible range ignores the spikes. Hover for values, scroll
 to zoom, drag to pan, double-click to reset, click a legend entry to hide a series, tick
-`log x` / `log y` for logarithmic axes, and `SVG` downloads the picture.
+`log x` / `log y` for logarithmic axes, and `SVG` downloads the picture. Contours,
+heatmaps and 3D plots are drawn with Plotly, which is bundled with Quire and loaded the
+first time such a plot appears.
+
+The **annotate** field marks a plot: `mark(x, "label")` puts a labelled dot on the curve
+(`point(x, y, "label")` anywhere), `shade(a, b)` shades the area under the curve,
+`band(a, b)` a vertical band, `hline(y)` and `vline(x)` reference lines, `text(x, y, "note")`
+a note.
 
 `a = slider(1, 0, 5, 0.1)` defines a value with a slider under the cell; dragging it
-re-evaluates everything below, plots included. The "Interactive plots" example shows
-each of these.
+re-evaluates everything below, plots included. Curves that depend on a slider are also
+compiled to JavaScript, so they follow the slider instantly while the exact server result
+is on its way. The "Interactive plots" and "Fields, surfaces and module plots" examples
+show each of these.
+
+Modules can add plot kinds with `api.plot_kind(...)`; the quantum, ode and control modules
+do (see `modules/quantum/module.py` for the shortest example).
 
 ## Modules
 

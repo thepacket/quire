@@ -14,6 +14,7 @@
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body { font-family: var(--sans); color: var(--ink); background: var(--bg); display: flex; flex-direction: column; }
 button { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); background: var(--paper); border-radius: 6px; cursor: pointer; color: var(--ink); }
@@ -145,3 +146,9 @@ svg.plot { cursor: crosshair; }
 .ac div.sel { background: var(--bg); }
 .ac .sig { font-family: var(--mono); }
 .ac .doc { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.panels svg.plot + svg.plot { margin-top: 6px; }
+.plotly-box { border: 1px solid var(--line); border-radius: 6px; background: var(--paper); max-width: 700px; overflow: hidden; }
+.annot-wrap { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); padding: 0 0 6px; }
+.annot-wrap input { flex: 1; font-family: var(--mono); font-size: 13px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: var(--paper); }
+.annot-wrap input:focus { outline: none; border-color: var(--accent); }

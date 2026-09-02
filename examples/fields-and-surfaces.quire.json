@@ -1,0 +1,160 @@
+{
+ "quire": 1,
+ "title": "Fields, surfaces and module plots",
+ "cells": [
+  {
+   "type": "text",
+   "source": "# Fields, surfaces and module plots\nContour and heatmap plots of two-variable functions, rotatable 3D surfaces and curves, and plot kinds that modules add: the Bloch sphere, phase portraits, Bode plots and root loci. Annotations mark what matters, and sliders redraw curves as you drag."
+  },
+  {
+   "type": "text",
+   "source": "## Contours and heatmaps\nA two-variable function, and the solution of the heat equation from the numerics module drawn as $u(x, t)$."
+  },
+  {
+   "type": "plot",
+   "kind": "contour",
+   "exprs": "sin(x) cos(y) + x/5",
+   "expr2": "14",
+   "var": "x, y",
+   "xmin": "-4",
+   "xmax": "4",
+   "ymin": "-3",
+   "ymax": "3"
+  },
+  {
+   "type": "math",
+   "source": "u = heat_fdm(sin(pi x) + 0.5 sin(3 pi x), x, 1, 1, 0.08, 40, 400)"
+  },
+  {
+   "type": "plot",
+   "kind": "heatmap",
+   "exprs": "u(x, t)",
+   "var": "x, t",
+   "xmin": "0",
+   "xmax": "1",
+   "ymin": "0",
+   "ymax": "0.08"
+  },
+  {
+   "type": "text",
+   "source": "## 3D\nDrag to rotate, scroll to zoom."
+  },
+  {
+   "type": "plot",
+   "kind": "surface",
+   "exprs": "exp(-(x^2 + y^2)/3) cos(2 x)",
+   "var": "x, y",
+   "xmin": "-3",
+   "xmax": "3",
+   "ymin": "-3",
+   "ymax": "3"
+  },
+  {
+   "type": "plot",
+   "kind": "curve3d",
+   "exprs": "cos(t), sin(t), t/6",
+   "var": "t",
+   "xmin": "0",
+   "xmax": "6 pi"
+  },
+  {
+   "type": "text",
+   "source": "## Quantum: the Bloch sphere\nSingle-qubit states as arrows. `plus()` points along $x$; `bloch_state(θ, φ)` is at polar angle θ and azimuth φ."
+  },
+  {
+   "type": "math",
+   "source": "θ = slider(1.05, 0, 3.14, 0.01)\nφ = slider(0.8, 0, 6.28, 0.01)\nψ = bloch_state(θ, φ)"
+  },
+  {
+   "type": "plot",
+   "kind": "bloch",
+   "exprs": "ψ, plus(), minus()"
+  },
+  {
+   "type": "text",
+   "source": "## ODE: a phase portrait\nThe van der Pol oscillator $\\dot x = y$, $\\dot y = \\mu (1 - x^2) y - x$: direction field, trajectories from a grid of starting points, and the equilibrium."
+  },
+  {
+   "type": "math",
+   "source": "μ = slider(1, 0, 3, 0.1)"
+  },
+  {
+   "type": "plot",
+   "kind": "phase",
+   "exprs": "y, μ (1 - x^2) y - x",
+   "var": "x, y",
+   "xmin": "-4",
+   "xmax": "4",
+   "ymin": "-4",
+   "ymax": "4",
+   "samples": "18"
+  },
+  {
+   "type": "text",
+   "source": "## Control: Bode plot and root locus\nA second-order system with a resonance, then the root locus of $G(s) = \\frac{1}{s (s + 1)(s + 2)}$ as the gain grows."
+  },
+  {
+   "type": "math",
+   "source": "ζ = slider(0.2, 0.05, 1.5, 0.05)\nH = 1/(s^2 + 2 ζ s + 1)"
+  },
+  {
+   "type": "plot",
+   "kind": "bode",
+   "exprs": "H",
+   "var": "s",
+   "xmin": "0.01",
+   "xmax": "10"
+  },
+  {
+   "type": "plot",
+   "kind": "root_locus",
+   "exprs": "1/(s (s + 1) (s + 2))",
+   "expr2": "30",
+   "var": "s"
+  },
+  {
+   "type": "text",
+   "source": "## Annotations\nMark points on a curve, shade the area under it, add reference lines and notes. The scatter plot carries error bars."
+  },
+  {
+   "type": "plot",
+   "kind": "function",
+   "exprs": "sin(x) exp(-x/5)",
+   "var": "x",
+   "xmin": "0",
+   "xmax": "10",
+   "annot": "mark(pi/2, \"first peak\"), shade(0, pi, \"area\"), hline(0.5, \"half\"), vline(2 pi), text(8, 0.6, \"decaying\")"
+  },
+  {
+   "type": "math",
+   "source": "xs = [1, 2, 3, 4, 5]\nys = [2.1, 3.9, 6.2, 7.8, 10.3]\nerr = [0.3, 0.3, 0.4, 0.4, 0.5]\nfit = linfit(xs, ys)"
+  },
+  {
+   "type": "plot",
+   "kind": "scatter",
+   "exprs": "xs",
+   "expr2": "ys",
+   "expr3": "err"
+  },
+  {
+   "type": "text",
+   "source": "## Sliders without waiting\nCurves that depend on a slider are compiled for the browser, so this one follows the slider instantly; the exact result from the server arrives a moment later."
+  },
+  {
+   "type": "math",
+   "source": "a = slider(1, 0.2, 3, 0.05)\nk = slider(2, 0.5, 6, 0.1)"
+  },
+  {
+   "type": "math",
+   "source": "g(x) = a sin(k x)/(1 + x^2/10)"
+  },
+  {
+   "type": "plot",
+   "kind": "function",
+   "exprs": "g(x), a/(1 + x^2/10)",
+   "var": "x",
+   "xmin": "-10",
+   "xmax": "10"
+  }
+ ]
+}

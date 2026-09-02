@@ -189,6 +189,7 @@ class Evaluator:
     def __init__(self, registry, digits: int = 6):
         self.registry = registry
         self.base_namespace = registry.namespace()
+        self.plot_kinds = registry.plot_kinds() if hasattr(registry, "plot_kinds") else {}
         self.units_namespace = {e.name: e.value for m in registry.modules for e in m.entries
                                 if e.kind == "unit" or (e.kind == "constant" and isinstance(e.value, sp.Basic)
                                                         and U.has_units(e.value))}
@@ -289,7 +290,8 @@ class Evaluator:
                 if hooks.context.get("notes"):
                     out["notes"] = list(hooks.context["notes"])
                 if hooks.context.get("slider") and st.kind == "definition":
-                    out["slider"] = dict(hooks.context["slider"], line=line_index)
+                    out["slider"] = dict(hooks.context["slider"], line=line_index, name=st.name)
+                    env.setdefault("$sliders", {})[st.name] = hooks.context["slider"]["value"]
                 outputs.append(out)
             except QuireError as exc:
                 error = str(exc)
@@ -300,6 +302,8 @@ class Evaluator:
             except Exception as exc:  # noqa: BLE001 - surface anything sympy throws
                 error = f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}"
                 break
+        if defines:  # remembered so plots can re-run a dependency chain with sliders held symbolic
+            env.setdefault("$trace", []).append({"source": source, "defines": list(defines), "uses": sorted(uses)})
         return {"ok": error is None, "outputs": outputs, "defines": defines, "uses": sorted(uses), "error": error,
                 "warning": warning}
 
