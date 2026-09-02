@@ -33,6 +33,26 @@ Tests: `.venv/bin/python -m pytest`. Symbolic coverage report: `.venv/bin/python
 number theory, special functions, worksheets with units and the stats module, all passing
 through the worksheet pipeline).
 
+## Deploying on fly.io
+
+The repository carries a `Dockerfile` (Python 3.13 with Maxima and FriCAS from Debian)
+and a `fly.toml`. Worksheets persist on a volume mounted at `/data`, and the machine
+stops when idle.
+
+```bash
+fly launch --copy-config --no-deploy   # creates the app; adjust app name and region in fly.toml
+fly volumes create quire_data --size 1 --region yyz
+fly secrets set QUIRE_PASSWORD='choose-a-long-password'
+fly deploy
+```
+
+Set `QUIRE_PASSWORD`: the server evaluates expressions for anyone who can reach it, so
+a public URL without a password is an open compute endpoint. With it, the browser asks
+once (HTTP Basic auth; any user name, that password). `/health` stays open for the
+platform's checks. Locally nothing changes: `python -m quire` still binds to localhost
+without a password. The image is about 1 GB because of the two CAS backends; drop the
+`apt-get install` line to run on SymPy alone.
+
 ## The language
 
 | Write | Meaning |

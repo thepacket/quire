@@ -310,3 +310,19 @@ def test_recognized_integral_carries_note(ev):
 
 def test_no_module_name_conflicts(ev):
     assert ev.registry.conflicts() == []
+
+
+def test_password_guard():
+    from quire.server import App
+
+    class Fake(App):  # no worker needed to test the auth check
+        def __init__(self, password):
+            self.password = password
+
+    import base64
+
+    assert Fake(None).authorized(None)
+    a = Fake("s3cret")
+    assert not a.authorized(None)
+    assert not a.authorized("Basic " + base64.b64encode(b"user:wrong").decode())
+    assert a.authorized("Basic " + base64.b64encode(b"anyone:s3cret").decode())

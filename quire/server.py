@@ -1,8 +1,10 @@
 """Local HTTP server: serves the UI and exposes the evaluator as JSON."""
 from __future__ import annotations
 
+import base64
 import json
 import mimetypes
+import os
 import re
 import threading
 import time
@@ -17,12 +19,24 @@ EXT = ".quire.json"
 
 
 class App:
-    def __init__(self, worksheets: Path, module_dirs: list[Path], examples: Path):
+    def __init__(self, worksheets: Path, module_dirs: list[Path], examples: Path, password: str | None = None):
         self.worksheets = worksheets
         self.module_dirs = module_dirs
         self.examples = examples
+        self.password = password or None  # when set, every request needs HTTP Basic auth with this password
         self.lock = threading.Lock()
         self.reload()
+
+    def authorized(self, header: str | None) -> bool:
+        if not self.password:
+            return True
+        if not header or not header.startswith("Basic "):
+            return False
+        try:
+            _, _, given = base64.b64decode(header[6:]).decode().partition(":")
+        except Exception:  # noqa: BLE001
+            return False
+        return given == self.password
 
     def reload(self):
         with self.lock:
@@ -80,8 +94,21 @@ def make_handler(app: App):
         def _json(self, obj, status=200):
             self._send(status, json.dumps(obj).encode())
 
+        def _guard(self) -> bool:
+            if app.authorized(self.headers.get("Authorization")):
+                return True
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="Quire"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return False
+
         def do_GET(self):
             path = self.path.split("?")[0]
+            if path == "/health":
+                return self._json({"ok": True})
+            if not self._guard():
+                return
             if path == "/api/catalog":
                 return self._json(app.catalog())
             if path == "/api/files":
@@ -95,6 +122,8 @@ def make_handler(app: App):
             self._json({"error": "not found"}, 404)
 
         def do_POST(self):
+            if not self._guard():
+                return
             n = int(self.headers.get("Content-Length") or 0)
             try:
                 body = json.loads(self.rfile.read(n) or b"{}")
