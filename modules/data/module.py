@@ -48,7 +48,7 @@ def _cell(text):
     try:
         float(t)
         digits = len(t.lstrip("+-").replace(".", "").split("e")[0].split("E")[0].lstrip("0")) or 1
-        return sp.Float(t, max(digits, 3))  # keeps the digits as written
+        return sp.Float(t, digits)  # keeps the digits as written
     except ValueError:
         return sp.Symbol(t.replace(" ", "_"))
 
