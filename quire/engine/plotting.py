@@ -43,7 +43,7 @@ def sample_plot(cell: dict, env: dict, ev) -> dict:
     try:
         kind = (cell.get("kind") or "function").strip()
         fn = {"function": _function, "parametric": _parametric, "polar": _polar, "scatter": _scatter,
-              "slope": _slope, "implicit": _implicit}.get(kind)
+              "slope": _slope, "implicit": _implicit, "shapes": _shapes}.get(kind)
         if fn is None:
             raise QuireError(f"Unknown plot kind '{kind}'.")
         res = fn(cell, env, ev)
@@ -345,3 +345,67 @@ def _marching_squares(X, Y, Z):
                 segs.append([float(pts[0][0]), float(pts[0][1]), float(pts[1][0]), float(pts[1][1])])
                 segs.append([float(pts[2][0]), float(pts[2][1]), float(pts[3][0]), float(pts[3][1])])
     return segs
+
+
+def _shape_series(obj, label):
+    """Series for a sympy.geometry entity (or a list of them)."""
+    from sympy import geometry as g
+
+    if isinstance(obj, (list, tuple, sp.FiniteSet)):
+        out = []
+        for k, item in enumerate(obj):
+            out.extend(_shape_series(item, f"{label}[{k}]"))
+        return out
+    if isinstance(obj, g.Point):
+        return [{"type": "points", "label": sp.latex(obj), "label_plain": label, "x": [float(obj.x)], "y": [float(obj.y)]}]
+    if isinstance(obj, g.Segment):
+        p, q = obj.points
+        return [{"type": "line", "label": label, "label_plain": label, "x": [float(p.x), float(q.x)], "y": [float(p.y), float(q.y)]}]
+    if isinstance(obj, g.Polygon):
+        pts = list(obj.vertices) + [obj.vertices[0]]
+        return [{"type": "line", "label": label, "label_plain": label, "x": [float(p.x) for p in pts], "y": [float(p.y) for p in pts]}]
+    if isinstance(obj, g.Ellipse):  # Circle is an Ellipse
+        t = np.linspace(0, 2 * np.pi, 181)
+        cx, cy = float(obj.center.x), float(obj.center.y)
+        a, b = float(obj.hradius), float(obj.vradius)
+        return [{"type": "line", "label": label, "label_plain": label, "x": [cx + a * math.cos(v) for v in t], "y": [cy + b * math.sin(v) for v in t]}]
+    if isinstance(obj, g.Line):
+        # unbounded: draw a long segment around the first point
+        p1, p2 = obj.points
+        dx, dy = float(p2.x - p1.x), float(p2.y - p1.y)
+        norm = math.hypot(dx, dy) or 1.0
+        dx, dy = dx / norm, dy / norm
+        L = 1000.0
+        if isinstance(obj, g.Ray):
+            xs = [float(p1.x), float(p1.x) + L * dx]
+            ys = [float(p1.y), float(p1.y) + L * dy]
+        else:
+            xs = [float(p1.x) - L * dx, float(p1.x) + L * dx]
+            ys = [float(p1.y) - L * dy, float(p1.y) + L * dy]
+        return [{"type": "line", "label": label, "label_plain": label, "x": xs, "y": ys, "unbounded": True}]
+    raise QuireError(f"'{label}' is not a shape that can be drawn.")
+
+
+def _shapes(cell, env, ev):
+    src = (cell.get("exprs") or "").strip()
+    if not src:
+        return {"series": [], "empty": True}
+    ns = ev.namespace(env)
+    series = []
+    for part in [p for p in split_top(src, ",") if p.strip()]:
+        obj = parse(part, ns, ev.unit_names)
+        if callable(obj) and not isinstance(obj, sp.Basic):
+            raise QuireError(f"'{part.strip()}' is a function, not a shape.")
+        series.extend(_shape_series(obj, part.strip()))
+    if not series:
+        return {"series": [], "empty": True}
+    # visible range from the bounded objects only
+    xs = [x for s_ in series if not s_.get("unbounded") for x in s_["x"]]
+    ys = [y for s_ in series if not s_.get("unbounded") for y in s_["y"]]
+    if not xs:
+        xs = [x for s_ in series for x in s_["x"][:1]]
+        ys = [y for s_ in series for y in s_["y"][:1]]
+    pad = 0.1 * max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
+    xr = [float(cell.get("xmin") or min(xs) - pad), float(cell.get("xmax") or max(xs) + pad)]
+    yr = [float(cell.get("ymin") or min(ys) - pad), float(cell.get("ymax") or max(ys) + pad)]
+    return {"series": series, "xlabel": "x", "ylabel": "y", "xrange": xr, "yrange": yr, "equal": True}

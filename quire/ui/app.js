@@ -189,6 +189,7 @@ const PLOT_KINDS = {
   scatter:    { label: "scatter (data)",  f1: "x data",  f2: "y data", var: null, range: null, yrange: false, ph1: "[1, 2, 3]", ph2: "[2, 4, 6.5]" },
   slope:      { label: "slope field",     f1: "dy/dx =", f2: null,   var: "variables", range: "x", yrange: true, ph1: "x - y", ph2: "" },
   implicit:   { label: "implicit F(x,y)=0", f1: "equation", f2: null, var: "variables", range: "x", yrange: true, ph1: "x^2 + y^2 == 4", ph2: "" },
+  shapes:     { label: "shapes (geometry)", f1: "draw", f2: null, var: null, range: "x", yrange: true, ph1: "circle(point(0, 0), 2), triangle(point(-1, -1), point(2, 0), point(0, 1))", ph2: "" },
 };
 
 function buildPlot(cell, body) {

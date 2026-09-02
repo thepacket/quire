@@ -182,6 +182,18 @@ Temperatures are absolute: write `from_celsius(25)` for 25 °C and `to_celsius(T
 Rates per second are written `0.1 Hz` or `0.1/second`, because `0.1/s` divides by the
 variable `s`. The "Engineering modules" example has one worked problem per module.
 
+### Mathematics modules
+
+| module | what it carries |
+|---|---|
+| `geometry` | `point`, `line`, `segment`, `circle`, `ellipse`, `polygon`, `triangle`; `intersect`, `distance`, `area`, `perimeter`, `centroid`, `angle_between`, tangents, reflections and rotations, circumcircle, incircle, convex hull, `triangle_from_sides`, `equation_of` for the implicit plot; the **shapes** plot kind draws any of these |
+| `optimization` | `critical_points` classified by the Hessian, `lagrange` multipliers, numeric `minimize` / `maximize` with constraints, `golden_section`, `linprog`, `curve_fit` with the symbolic Jacobian, `gradient_descent` tables |
+| `discrete` | sets and power sets, permutations and combinations, derangements, generating functions and series coefficients, graphs as edge lists (`shortest_path`, `minimum_spanning_tree`, `adjacency`, `degrees`), logic with `AND`, `OR`, `NOT`, `IMPLIES`, `IFF`, `truth_table`, `is_tautology`, `to_cnf` |
+| `crypto` | `continued_fraction`, `convergents`, `pell`, `diophantine_solve`, `crt`, `discrete_log`, `primitive_root`, `sqrt_mod`; `rsa_keygen` / `rsa_encrypt` / `rsa_decrypt`, `diffie_hellman`, elliptic curves over F_p (`ec_add`, `ec_multiply`, `ec_order`, `ec_points`, `ecdh`) with the steps in notes |
+| `tensors` | `christoffel`, `riemann`, `ricci`, `ricci_scalar`, `gaussian_curvature`, `geodesic_equations`, `line_element`, and ready metrics: sphere, polar, Minkowski, Schwarzschild |
+
+The "Mathematics modules" example has a worked case for each.
+
 ### Data and probability modules
 
 | module | what it carries |
