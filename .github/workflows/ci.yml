@@ -11,25 +11,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends maxima fricas
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends maxima maxima-share fricas
       - run: pip install -e '.[dev]'
-      - name: Backend smoke test
-        run: |
-          maxima --version || true
-          python - <<'PY'
-          import importlib.util, sys, pathlib, subprocess
-          import sympy as sp
-          def load(name):
-              spec = importlib.util.spec_from_file_location(f"quire_module_{name}", pathlib.Path("modules") / name / "module.py")
-              m = importlib.util.module_from_spec(spec); sys.modules[spec.name] = m; spec.loader.exec_module(m); return m
-          x = sp.Symbol("x")
-          mx = load("maxima")
-          prog = "display2d:false$ ratprint:false$ " + mx._emit("integrate(1/(1+x^2), x)")
-          r = subprocess.run([mx.MAXIMA, "--very-quiet", "--batch-string", prog], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
-          print("maxima raw rc", r.returncode, "\n--- stdout ---\n", r.stdout[:1500], "\n--- stderr ---\n", r.stderr[:800])
-          print("maxima integrate:", mx.integrate(1/(1+x**2), [x]))
-          print("maxima simplify:", mx.simplify(sp.sin(x)**6 + sp.cos(x)**6 + 3*sp.sin(x)**2*sp.cos(x)**2))
-          fr = load("fricas")
-          print("fricas integrate:", fr.integrate(1/(1+x**2), [x]))
-          PY
       - run: python -m pytest -q tests

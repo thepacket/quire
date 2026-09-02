@@ -184,20 +184,22 @@ def _run(code: str, generic: str = "") -> list[str]:
     """
     if not MAXIMA:
         return []
-    prog = 'display2d:false$ ratprint:false$ ' + code
+    prog = 'display2d:false$ ratprint:false$ linel:100000$ ' + code  # linel: print must not wrap long results
     try:
         r = subprocess.run([MAXIMA, "--very-quiet", "--batch-string", prog], capture_output=True, text=True,
                            stdin=subprocess.DEVNULL, timeout=TIMEOUT)
     except (subprocess.TimeoutExpired, OSError):
         return []
-    out = [line[len(MARK):] for line in r.stdout.splitlines() if line.startswith(MARK)]
+    out = [line[len(MARK):].strip() for line in r.stdout.splitlines() if line.startswith(MARK)]
     if not out and generic and QUESTION in (r.stdout + r.stderr):
         return _run(generic + code)
     return out
 
 
 def _emit(expr_code: str) -> str:
-    return f'printf(true, "~%~a~a~a~%", "{MARK[:4]}", "{MARK[4:]}", string({expr_code}))$'
+    # print, not printf: printf needs the stringproc share package, which Debian and Ubuntu
+    # ship separately (maxima-share) and a bare install lacks.
+    return f'print(concat("{MARK[:4]}", "{MARK[4:]}"), string({expr_code}))$'
 
 
 def _prepare(exprs):
