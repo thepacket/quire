@@ -2,7 +2,26 @@
 name = "quire"
 version = "0.1.0"
 description = "A reactive, unit-aware math worksheet. Symbolic and numeric math with plotting, no programming required."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Andre Paquette" }]
 requires-python = ">=3.11"
+keywords = ["math", "worksheet", "sympy", "units", "plotting", "education"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+[project.urls]
+Homepage = "https://github.com/thepacket/quire"
+Repository = "https://github.com/thepacket/quire"
+Issues = "https://github.com/thepacket/quire/issues"
+Discussions = "https://github.com/thepacket/quire/discussions"
 dependencies = ["sympy>=1.13", "numpy>=1.26", "scipy>=1.12", "CoolProp>=6.6", "periodictable>=1.7"]
 
 [project.optional-dependencies]

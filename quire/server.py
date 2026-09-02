@@ -14,6 +14,23 @@ from pathlib import Path
 from .engine.worker import EvalWorker
 
 UI_DIR = Path(__file__).parent / "ui"
+
+
+def _version() -> str:
+    try:
+        import tomllib
+
+        return tomllib.load(open(Path(__file__).resolve().parent.parent / "pyproject.toml", "rb"))["project"]["version"]
+    except Exception:  # noqa: BLE001
+        try:
+            from importlib.metadata import version
+
+            return version("quire")
+        except Exception:  # noqa: BLE001
+            return "unknown"
+
+
+VERSION = _version()
 FILE_RE = re.compile(r"^[\w][\w \-.]{0,80}$")
 EXT = ".quire.json"
 
@@ -67,7 +84,7 @@ class App:
             self._catalog = self.worker.catalog()
 
     def catalog(self):
-        return self._catalog
+        return dict(self._catalog, version=VERSION)
 
     def evaluate(self, cells):
         with self.lock:

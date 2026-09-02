@@ -1,3 +1,4 @@
+/* Quire UI styles. Copyright (c) 2026 Andre Paquette. MIT License. */
 :root {
   --bg: #f6f5f2;
   --paper: #ffffff;
@@ -282,3 +283,14 @@ body.shared .cell.check details.author { display: none !important; }
 .gloss .doc { color: #4b5563; margin: 3px 0; }
 .gloss .ex { font-family: var(--mono); font-size: 12px; color: var(--accent); cursor: pointer; }
 .gloss .ex:hover { text-decoration: underline; }
+
+.about p { margin: 6px 0; font-size: 14px; line-height: 1.5; }
+.about-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.about-name { font-size: 22px; font-weight: 700; letter-spacing: .02em; }
+.about-ver { color: var(--muted); font-size: 13px; }
+.about a { color: var(--accent); }
+.about h4 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+table.credits { border-collapse: collapse; font-size: 13px; }
+table.credits td { padding: 2px 10px 2px 0; vertical-align: top; }
+table.credits td.lic { color: var(--muted); white-space: nowrap; }
+body.shared #btn-about { display: inline-block !important; }

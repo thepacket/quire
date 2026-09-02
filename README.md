@@ -16,6 +16,9 @@ Units travel with the math: `y(t) = v_0 t - 1/2 g t^2` evaluated at `y(1 s)` com
 out in meters, and `2 km + 3 s` is an error that says why. Anything you leave undefined
 stays symbolic, so `diff(1/2 M v^2, v)` gives `M v`.
 
+Quire is free software under the [MIT License](LICENSE). Source, issues and discussions live at
+[github.com/thepacket/quire](https://github.com/thepacket/quire).
+
 ## Run it
 
 ```bash
@@ -466,3 +469,18 @@ carries `defines` and `uses`, shown under the cell.
 - Plot cells are 2D: functions, parametric, polar, scatter, slope fields and implicit
   curves. No contour, heatmap or 3D plots yet.
 - File dialogs are minimal (a name, not a file picker); the on-disk format is plain JSON.
+
+## Contributing
+
+Bug reports with the worksheet lines that reproduce them, new modules, examples and
+documentation are all welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) for how the code is
+laid out, how to run the tests, and the conventions that keep the worksheet language
+coherent. Questions and ideas go to
+[Discussions](https://github.com/thepacket/quire/discussions).
+
+## License
+
+Copyright © 2026 Andre Paquette. Quire is released under the [MIT License](LICENSE).
+The libraries it builds on are listed in the About dialog of the app; all are permissive
+(BSD, MIT, public domain). Maxima, an optional GPL backend, is run as a separate program
+and is not part of Quire.

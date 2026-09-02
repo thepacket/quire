@@ -1,5 +1,6 @@
 /* Quire worksheet UI. Plain JavaScript, no build step.
-   The engine lives on the server; this file owns the document, rendering and plots. */
+   The engine lives on the server; this file owns the document, rendering and plots.
+   Copyright (c) 2026 Andre Paquette. MIT License: see LICENSE in the repository. */
 (() => {
 "use strict";
 
@@ -322,6 +323,7 @@ function buildCheck(cell, body) {
   const prompt = $(".check-prompt", body);
   const showPrompt = () => { prompt.innerHTML = markdown(cell.prompt || "", { cellId: cell.id }) || `<span class="hint">${locked ? "" : "Write the question in the author section below."}</span>`; };
   showPrompt();
+  body._show = showPrompt;
   const answer = $("input.answer", body);
   answer.value = cell.answer || "";
   answer.addEventListener("input", () => { cell.answer = answer.value; setDirty(true); acShow(answer); });
@@ -1212,6 +1214,31 @@ async function documentDialog() {
   } catch (e) { /* ignore */ }
 }
 
+// ---------- About ----------
+const CREDITS = [
+  ["SymPy", "https://www.sympy.org", "symbolic mathematics", "BSD"], ["NumPy", "https://numpy.org", "arrays", "BSD"], ["SciPy", "https://scipy.org", "numerical methods", "BSD"],
+  ["mpmath", "https://mpmath.org", "arbitrary precision, PSLQ", "BSD"], ["CoolProp", "http://www.coolprop.org", "fluid properties", "MIT"], ["periodictable", "https://github.com/pkienzle/periodictable", "elements", "public domain"],
+  ["KaTeX", "https://katex.org", "math rendering", "MIT"], ["Plotly.js", "https://plotly.com/javascript/", "contours and 3D plots", "MIT"],
+  ["Maxima", "https://maxima.sourceforge.io", "optional backend, run as a separate program", "GPL"], ["FriCAS", "https://fricas.github.io", "optional backend, run as a separate program", "BSD"],
+];
+function aboutDialog() {
+  const v = state.catalog && state.catalog.version ? state.catalog.version : "";
+  const mods = state.catalog ? state.catalog.modules.filter(m => !m.error).length : 0;
+  modal("About Quire", `
+    <div class="about">
+      <div class="about-head"><span class="about-name">Quire</span>${v ? `<span class="about-ver">version ${esc(v)}</span>` : ""}</div>
+      <p>A reactive, unit-aware math worksheet: symbolic and numerical mathematics with plotting, and no programming language to learn.
+      Definitions stay live, units travel with the numbers, and ${mods ? mods + " modules" : "modules"} add the formulas of engineering, science, data and education.</p>
+      <p>Copyright © 2026 Andre Paquette. Released under the <a href="https://github.com/thepacket/quire/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>.</p>
+      <p><a href="https://github.com/thepacket/quire" target="_blank" rel="noopener">Source code</a> ·
+         <a href="https://github.com/thepacket/quire/issues" target="_blank" rel="noopener">Report a problem</a> ·
+         <a href="https://github.com/thepacket/quire/discussions" target="_blank" rel="noopener">Discussions</a> ·
+         <a href="https://github.com/thepacket/quire/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a></p>
+      <h4>Built with</h4>
+      <table class="credits">${CREDITS.map(([n, url, what, lic]) => `<tr><td><a href="${url}" target="_blank" rel="noopener">${esc(n)}</a></td><td>${esc(what)}</td><td class="lic">${esc(lic)}</td></tr>`).join("")}</table>
+    </div>`);
+}
+
 // ---------- Files ----------
 async function api(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -1413,6 +1440,7 @@ function acKey(ev) {
 function init() {
   $("#title").addEventListener("input", ev => { state.title = ev.target.value; setDirty(true); renderTitleBlock(); });
   $("#btn-doc").onclick = documentDialog;
+  $("#btn-about").onclick = aboutDialog;
   $("#titleblock").addEventListener("click", documentDialog);
   $("#btn-new").onclick = () => { if (!state.dirty || confirm("Discard unsaved changes?")) loadDoc({ title: "Untitled", cells: [{ type: "math", source: "" }] }); };
   $("#btn-open").onclick = () => openDialog(false);
@@ -1490,7 +1518,12 @@ function init() {
   if (draft && draft.doc && draft.doc.cells && draft.doc.cells.length) loadDoc(draft.doc, draft.fileName);
   else loadDoc(WELCOME);
   // KaTeX loads async; re-render once it is available.
-  const tick = setInterval(() => { if (window.katex) { clearInterval(tick); for (const r of state.results.values()) renderResult(r); for (const el of state.els.values()) { const md = $(".md", el); if (md && md.style.display !== "none") { const c = state.cells[cellIndex(el.dataset.id)]; md.innerHTML = markdown(c.source || ""); } } } }, 100);
+  const tick = setInterval(() => {
+    if (!window.katex) return;
+    clearInterval(tick);
+    for (const r of state.results.values()) renderResult(r);
+    for (const el of state.els.values()) { const body = $(".body", el); if (body && body._show) body._show(); }  // text and check cells redraw their Markdown
+  }, 100);
 }
 document.addEventListener("DOMContentLoaded", init);
 })();
