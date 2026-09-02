@@ -326,3 +326,15 @@ def test_password_guard():
     assert not a.authorized(None)
     assert not a.authorized("Basic " + base64.b64encode(b"user:wrong").decode())
     assert a.authorized("Basic " + base64.b64encode(b"anyone:s3cret").decode())
+
+
+def test_digits_setting(ev):
+    r = run(ev, "sqrt(2)", "digits 12", "sqrt(2)", "pi 1.0", "N(pi, 20)", "nsolve(cos(x) == x, x, 1)")
+    assert r[0]["outputs"][0]["approx_plain"] == "1.41421"
+    assert r[1]["outputs"][0]["plain"] == "digits 12"
+    assert r[2]["outputs"][0]["approx_plain"] == "1.41421356237"
+    assert r[3]["outputs"][0]["plain"] == "3.14159265359"
+    assert r[4]["outputs"][0]["plain"] == "3.14159265359"   # display precision governs
+    assert r[5]["outputs"][0]["plain"] == "0.739085133215"
+    bad = run(ev, "digits 100")[0]
+    assert not bad["ok"] and "between" in bad["error"]

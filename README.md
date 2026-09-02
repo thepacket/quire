@@ -64,6 +64,7 @@ without a password. The image is about 1 GB because of the two CAS backends; dro
 | `a == b` | an equation, for `solve`, `nsolve`, `dsolve` |
 | `x^2`, `2 pi`, `sin x`, `n!` | powers, implicit multiplication, function application, factorial |
 | `[1, 2, 3]`, `matrix([[1, 2], [3, 4]])` | lists and matrices |
+| `digits 10` | show ten significant digits in every cell below (default 6); `N(x, 20)` and `round(x, 3)` act on one value |
 | several lines in one cell | evaluated in order, each shown |
 
 Single-letter unit symbols (`m`, `s`, `g`, `N`, `V`, `C`, `F`, `T` …) are units only in

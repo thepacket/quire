@@ -19,6 +19,7 @@ from .parser import GREEK_NAMES, SYM_ALIAS, UNIT_ALIAS, alias_units, classify, i
 INTERNAL_NAMES = {"Symbol", "Integer", "Float", "Rational", "Function", "Lambda"}
 ASSUME_KEY = "$assume"  # env slot for symbol assumptions; '$' cannot appear in a name
 BOUNDS_KEY = "$bounds"  # env slot for numeric bounds from 'assume s > 1' (used by backends)
+DIGITS_KEY = "$digits"  # env slot for the display precision set by 'digits n' 
 
 _ASSUMPTION_LATEX = {
     "positive": "{n} > 0", "negative": "{n} < 0", "nonnegative": r"{n} \geq 0", "nonpositive": r"{n} \leq 0",
@@ -230,6 +231,10 @@ class Evaluator:
                 if st.kind == "assume":
                     outputs.append(self.assume(st, env))
                     continue
+                if st.kind == "digits":
+                    env[DIGITS_KEY] = int(st.body)
+                    outputs.append({"kind": "setting", "latex": r"\text{digits: }" + st.body, "plain": f"digits {st.body}"})
+                    continue
                 ns = self.namespace(env, st.params)
                 # names used, ignoring unit phrases such as "3 m" even when m is also defined
                 uses |= (identifiers(alias_units(st.body, self.unit_names)) - set(st.params)) & set(env) - {ASSUME_KEY, BOUNDS_KEY}
@@ -251,7 +256,7 @@ class Evaluator:
                     env[st.name] = value
                     defines.append(st.name)
                 self.last_values.append(value)
-                out = self.render(st, value)
+                out = self.render(st, value, env.get(DIGITS_KEY))
                 if hooks.context.get("notes"):
                     out["notes"] = list(hooks.context["notes"])
                 if hooks.context.get("slider") and st.kind == "definition":
@@ -314,25 +319,35 @@ class Evaluator:
             raise QuireError("'->' conversion needs a single quantity on the left.")
         return value
 
-    def display_value(self, value):
-        """What to show: inexact inputs (decimals) give a rounded numeric result."""
+    def display_value(self, value, digits=None):
+        """What to show: inexact inputs (decimals) give a rounded numeric result.
+
+        With an explicit 'digits n' in the worksheet, plain decimals are rounded to n
+        significant digits too; otherwise they keep the precision they were computed with.
+        """
+        explicit = digits is not None
+        digits = digits or self.digits
         if isinstance(value, (list, tuple)):
-            return type(value)(self.display_value(v) for v in value)
+            return type(value)(self.display_value(v, digits if explicit else None) for v in value)
+        if isinstance(value, sp.MatrixBase) and explicit and value.atoms(sp.Float):
+            return value.applyfunc(lambda e: self.display_value(e, digits))
         if isinstance(value, sp.Expr) and not isinstance(value, (sp.Lambda, DefinedFunction, BooleanAtom)) \
                 and not value.free_symbols and value.atoms(sp.Float):
             num, unit = U.split_units(value)
-            if isinstance(num, sp.Float) or (isinstance(num, sp.Expr) and not num.is_number):
-                return value  # already a plain decimal (keep the user's precision), or not numeric
+            if isinstance(num, sp.Float) and not explicit:
+                return value  # keep the precision it was computed with
+            if isinstance(num, sp.Expr) and not num.is_number:
+                return value
             try:
-                num = sp.N(num, self.digits + 3)
+                num = sp.N(num, digits + 3)
                 if num.is_number and num.is_real:
-                    return sp.Float(float(num), self.digits) * unit if float(num) != 0 else sp.S.Zero * unit
+                    return sp.Float(float(num), digits) * unit if float(num) != 0 else sp.S.Zero * unit
             except (TypeError, ValueError):
                 return value
         return value
 
-    def render(self, st, value) -> dict:
-        shown = self.display_value(value)
+    def render(self, st, value, digits=None) -> dict:
+        shown = self.display_value(value, digits)
         out = {"kind": st.kind, "latex": to_latex(shown), "plain": to_plain(shown)}
         if st.kind in ("definition", "function"):
             out["name"] = st.name
@@ -340,7 +355,7 @@ class Evaluator:
             if st.kind == "function":
                 head += r"\left(" + ", ".join(sp.latex(sp.Symbol(p)) for p in st.params) + r"\right)"
             out["head"] = head
-        approx = approx_of(shown.expr if isinstance(shown, (sp.Lambda, DefinedFunction)) else shown, self.digits)
+        approx = approx_of(shown.expr if isinstance(shown, (sp.Lambda, DefinedFunction)) else shown, digits or self.digits)
         if approx:
             out["approx"], out["approx_plain"] = approx
         return out

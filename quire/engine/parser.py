@@ -286,7 +286,7 @@ def _friendly_type_error(msg: str, src: str) -> str:
 class Statement:
     """A parsed worksheet line."""
 
-    kind: str  # "definition" | "function" | "expression" | "assume"
+    kind: str  # "definition" | "function" | "expression" | "assume" | "digits"
 
     def __init__(self, kind: str, name: str | None, params: list[str], body: str, convert_to: str | None,
                  names: list[str] = (), assumptions: dict | None = None):
@@ -297,6 +297,21 @@ class Statement:
         self.convert_to = convert_to
         self.names = list(names)
         self.assumptions = assumptions or {}
+
+
+DIGITS_RE = re.compile(r"^\s*digits\s*(?:=|:)?\s*(\d+)\s*$")
+
+
+def _setting(line: str) -> Statement | None:
+    m = DIGITS_RE.match(line)
+    if m:
+        n = int(m.group(1))
+        if not 2 <= n <= 50:
+            raise ParseError("digits must be between 2 and 50.")
+        return Statement("digits", None, [], str(n), None)
+    if re.match(r"^\s*digits\b", line):
+        raise ParseError("Write e.g. 'digits 10' to show ten significant digits from here on.")
+    return None
 
 
 def _assume(line: str) -> Statement | None:
@@ -364,7 +379,7 @@ def _assume(line: str) -> Statement | None:
 
 def classify(line: str) -> Statement:
     """Decide whether a line defines something, and split off a '->' conversion."""
-    st = _assume(line)
+    st = _setting(line) or _assume(line)
     if st is not None:
         return st
     m = DEF_RE.match(line)
