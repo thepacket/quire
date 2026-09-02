@@ -59,6 +59,7 @@ GREEK_NAMES = ("beta", "gamma", "zeta", "lambda")
 GREEK_RE = re.compile(r"(?<![A-Za-z0-9_.])(" + "|".join(GREEK_NAMES) + r")\b(?!\s*\()")
 NUM_RE = re.compile(r"(?<![A-Za-z0-9_.])(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
 PHRASE_RE = re.compile(rf"(\s*/\s*|\s*)({IDENT})(?!\s*\()(\s*\^\s*(?:-?\d+|\(\s*-?\d+\s*\)))?")
+GROUP_RE = re.compile(rf"(\s*/\s*|\s*\*?\s*)\(\s*({IDENT}(?:\s*\^\s*-?\d+)?(?:\s*[* ]\s*{IDENT}(?:\s*\^\s*-?\d+)?)*)\s*\)")
 DEF_RE = re.compile(rf"^\s*({IDENT})\s*(?:\(\s*({IDENT}(?:\s*,\s*{IDENT})*)\s*\))?\s*=(?!=)(.*)$", re.S)
 CALL_RE = re.compile(rf"(?<![A-Za-z0-9_.])({IDENT})\(")
 IDENT_RE = re.compile(rf"(?<![A-Za-z0-9_.])({IDENT})(?![A-Za-z0-9_(])")
@@ -194,20 +195,29 @@ def rewrite_indexes(src: str, namespace: dict) -> str:
 
 
 def alias_units(src: str, unit_names) -> str:
-    """After a number, a run of unit names always means units: ``3 m/s^2``.
+    """After a number, a run of unit names always means units: ``3 m/s^2``, ``0.8 W/(m K)``.
 
     Each such name is rewritten to its ``qunit_`` alias so a worksheet variable
     with the same name (``m = 2 kg``) does not capture it. ``2*m`` is left
     alone: an explicit ``*`` means "the thing named m". A number that is a
     divisor or an exponent (``1/2 g t^2``, ``x^2 m``) does not start a unit
-    phrase either, so a user-defined ``g`` survives there.
+    phrase either. A single-letter unit symbol that also appears elsewhere in the
+    expression on its own (``s^3 + 2 s^2 + 3 s``) is a variable throughout.
     """
     out, pos = [], 0
+    aliased: list[tuple[int, int, str]] = []  # (start, end, name) spans in the output for single letters
+
+    def emit(text, name=None):
+        start = sum(len(o) for o in out)
+        out.append(text)
+        if name is not None and len(name) == 1:
+            aliased.append((start, start + len(text), name))
+
     while True:
         m = NUM_RE.search(src, pos)
         if not m:
             out.append(src[pos:])
-            return "".join(out)
+            break
         out.append(src[pos:m.end()])
         p = m.end()
         before = src[: m.start()].rstrip()
@@ -216,15 +226,35 @@ def alias_units(src: str, unit_names) -> str:
             continue
         first = True
         while True:
+            gm = GROUP_RE.match(src, p)
+            if gm and not first:
+                names = re.findall(IDENT, gm.group(2))
+                if names and all(n in unit_names for n in names):
+                    inner = re.sub(rf"(?<![A-Za-z0-9_]){IDENT}", lambda t: UNIT_ALIAS + t.group(0), gm.group(2))
+                    for n in names:
+                        if len(n) == 1:
+                            aliased.append((-1, -1, n))
+                    out.append(gm.group(1) + "(" + inner + ")")
+                    p = gm.end()
+                    continue
             pm = PHRASE_RE.match(src, p)
             if not pm or pm.group(2) not in unit_names:
                 break
             if first and "/" in pm.group(1):
                 break  # "2/s^3" is a division by the variable s, not "per second"
             first = False
-            out.append(pm.group(1) + UNIT_ALIAS + pm.group(2) + (pm.group(3) or ""))
+            out.append(pm.group(1))
+            emit(UNIT_ALIAS + pm.group(2), pm.group(2))
+            out.append(pm.group(3) or "")
             p = pm.end()
         pos = p
+    result = "".join(out)
+    # consistency: a single-letter unit used bare somewhere is a variable everywhere in this expression
+    for name in {n for _, _, n in aliased}:
+        bare = re.search(rf"(?<![A-Za-z0-9_.]){name}(?![A-Za-z0-9_(])", result)
+        if bare:
+            result = result.replace(UNIT_ALIAS + name, name)
+    return result
 
 
 def identifiers(src: str) -> set[str]:

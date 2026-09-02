@@ -167,6 +167,21 @@ can be called (`y_e(1)`), plotted against `rk4` and the exact `exp(-2 x)`, and i
 enforced. `heat_fdm` returns `u(x, t)`; plot `u(x, 0.05)`. The "Numerical methods" example
 worksheet walks through all four families.
 
+### Engineering modules
+
+| module | what it carries |
+|---|---|
+| `circuits` | impedances and phasors, dividers, RC/RL/RLC transfer functions in `s`, cutoff and resonance, step responses, AC power, dB, `bode_gain` / `bode_phase` as expressions in `f` for log plots |
+| `control` | `tf`, `tf_poles`, `tf_zeros`, `feedback`, `pid`, `second_order`, `damping`, `overshoot`, `settling_time`, `step_response`, `routh` tables, `is_stable`, `root_locus` and `nyquist` data for scatter plots, state space |
+| `mechanics` | section properties, stress and strain, principal and von Mises stresses, beam formulas returning `[deflection(x), moment(x), shear(x)]`, Euler buckling, springs and vibration, Goodman and Soderberg fatigue |
+| `thermo` | real fluid properties from CoolProp (`fluid_density(water, T, P)`, saturation, latent heat, psychrometrics), ideal gas and cycle efficiencies, conduction / convection / radiation, LMTD and NTU, Reynolds, friction factor, head loss, Bernoulli, drag |
+| `signals` | `sample_signal`, `spectrum` (FFT), windows, convolution, Butterworth and FIR design, `filter_apply`, `freq_response`, `z_transfer`, symbolic Fourier coefficients and partial sums |
+| `chemistry` | molar masses and composition from formulas written as names (`molar_mass(CaCO3)`), `balance([C3H8, O2], [CO2, H2O])`, moles and mass, pH, buffers, Arrhenius, Gibbs, Nernst, and a small table of typical material properties (`material_E(steel)`) |
+
+Temperatures are absolute: write `from_celsius(25)` for 25 °C and `to_celsius(T)` to read one.
+Rates per second are written `0.1 Hz` or `0.1/second`, because `0.1/s` divides by the
+variable `s`. The "Engineering modules" example has one worked problem per module.
+
 ### Quantum computing (`modules/quantum`)
 
 Symbolic linear algebra over complex Hilbert spaces, in Dirac notation:

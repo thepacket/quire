@@ -151,26 +151,25 @@ def check_dimensions(expr) -> None:
 
     Only fully bound expressions are checked: a free symbol may receive a
     unit-carrying value later (function parameters, plot variables), so
-    ``x m + 3 s`` is judged when x is known, not before.
+    ``x m + 3 s`` is judged when x is known, not before. Every Add inside the
+    expression is checked term by term in SI base units, so Hz*s and km/m cancel
+    and functions such as Abs or log around a sum do not confuse the check.
     """
     if not has_units(expr) or expr.free_symbols:
         return
-    try:
-        SI._collect_factor_and_dimension(expr)
-    except ValueError as exc:
-        msg = str(exc)
-        m = re.match(r'Dimension of "(.+)" is Dimension\((.+?)\), but it should be Dimension\((.+?)\)$', msg)
-        if m:
-            got = m.group(2).split(", ")[0]
-            want = m.group(3).split(", ")[0]
-            raise UnitError(
-                f"Cannot add '{m.group(1)}' ({got}) to a quantity with dimension {want}."
-            ) from None
-        raise UnitError("Inconsistent units: " + msg) from None
-    except Exception:
-        # _collect_factor_and_dimension does not cover every expression shape;
-        # only ValueError carries a real inconsistency.
-        return
+    base = to_base(expr)
+    dimsys = SI.get_dimension_system()
+    for add in base.atoms(sp.Add):
+        known = []
+        for term in add.args:
+            try:
+                d = u.Dimension(SI.get_dimensional_expr(term))
+            except Exception:  # noqa: BLE001 - a function of a dimensional argument; leave it
+                continue
+            known.append((term, d))
+        for term, d in known[1:]:
+            if not dimsys.equivalent_dims(d, known[0][1]):
+                raise UnitError(f"Cannot add '{term}' ({d.name}) to a quantity with dimension {known[0][1].name}.")
 
 
 def to_base(expr):
@@ -184,11 +183,25 @@ def to_base(expr):
 
 
 def tidy_units(expr):
-    """Normalise mixed-unit sums to SI base units; leave clean products as written."""
+    """Normalise mixed-unit sums to SI base units; leave clean products as written.
+
+    Also collapses units that cancel (a Reynolds number written with kg, m, Pa, s) and
+    evaluates physical constants (R, sigma, g_0) so results are numbers with units.
+    """
+    from sympy.physics.units.quantities import PhysicalConstant
+
     if not has_units(expr):
         return expr
+    qs = quantities(expr)
+    if any(isinstance(q, PhysicalConstant) for q in qs):
+        return prefer_derived(to_base(expr))
     if isinstance(expr, sp.Add) or any(isinstance(a, sp.Add) and has_units(a) for a in expr.atoms(sp.Add)):
-        return to_base(expr)
+        return prefer_derived(to_base(expr))
+    try:
+        if SI.get_dimension_system().is_dimensionless(u.Dimension(SI.get_dimensional_expr(expr))):
+            return to_base(expr)
+    except Exception:  # noqa: BLE001
+        pass
     return expr
 
 
@@ -237,6 +250,21 @@ def _abbrev(unit) -> str:
     return str(unit.subs(rep)).replace("**", "^")
 
 
+def prefer_derived(expr):
+    """Express a base-unit result in the named SI unit of its dimension (W, N, J, Pa, V, ...)."""
+    if not has_units(expr):
+        return expr
+    try:
+        dim = u.Dimension(SI.get_dimensional_expr(expr))
+        dimsys = SI.get_dimension_system()
+        for cand in _preferred_units():
+            if isinstance(cand, Quantity) and dimsys.equivalent_dims(dim, u.Dimension(SI.get_dimensional_expr(cand))):
+                return convert_to(expr, cand)
+    except Exception:  # noqa: BLE001
+        pass
+    return expr
+
+
 def unit_label(expr) -> str:
     """Short plain-text unit label for axes, e.g. 'm/s' or 'V', for values in SI base units."""
     if not has_units(expr):
@@ -277,3 +305,33 @@ def convert(expr, target):
             f"{unit_label(target) or target} (dimension {dimension_of(target)})."
         )
     return result
+
+
+def si_value(x, like=None, name: str = "value") -> float:
+    """Numeric value of x in SI base units, checking its dimension against ``like`` (a reference quantity).
+
+    ``like=None`` accepts a plain number only; ``like=1`` accepts either. Raises UnitError with the
+    dimension it expected, so a formula given the wrong quantity fails instead of guessing.
+    """
+    x = sp.sympify(x)
+    if like is None:
+        if has_units(x):
+            raise UnitError(f"{name} must be a plain number, got units of {dimension_of(x)}.")
+        return float(x)
+    if like == 1:
+        return float(strip_units(x)[0]) if has_units(x) else float(x)
+    want = dimension_of(like)
+    if not has_units(x):
+        if want == 1:
+            return float(x)
+        raise UnitError(f"{name} needs units of {unit_label(like)} (dimension {want}); got a plain number.")
+    got = dimension_of(x)
+    dimsys = SI.get_dimension_system()
+    if not dimsys.equivalent_dims(u.Dimension(got), u.Dimension(want)):
+        raise UnitError(f"{name} needs units of {unit_label(like)} (dimension {want}); got {got}.")
+    return float(strip_units(x)[0])
+
+
+def quantity(value: float, unit):
+    """A Float with units, e.g. quantity(3.0, u.meter / u.second)."""
+    return sp.Float(value) * unit

@@ -3,7 +3,7 @@ name = "quire"
 version = "0.1.0"
 description = "A reactive, unit-aware math worksheet. Symbolic and numeric math with plotting, no programming required."
 requires-python = ">=3.11"
-dependencies = ["sympy>=1.13", "numpy>=1.26", "scipy>=1.12"]
+dependencies = ["sympy>=1.13", "numpy>=1.26", "scipy>=1.12", "CoolProp>=6.6", "periodictable>=1.7"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
