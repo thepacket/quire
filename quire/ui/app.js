@@ -553,8 +553,12 @@ function renderCatalog() {
   }
   if (!state.refCollapsed) state.refCollapsed = loadCollapsed();
   if (!state.refInit) { state.refInit = true; if (!localStorage.getItem(REF_KEY)) { for (const c of groups.keys()) state.refCollapsed.add(c); } }
+  // Fixed order up to Units, then every other section alphabetically.
+  const PINNED = ["Syntax", "Interactive", "Constants", "Physical constants", "Units"];
+  const ordered = [...PINNED.filter(c => groups.has(c)), ...[...groups.keys()].filter(c => !PINNED.includes(c)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))];
   let h = "";
-  for (const [c, items] of groups) {
+  for (const c of ordered) {
+    const items = groups.get(c);
     const open = q ? true : !state.refCollapsed.has(c);
     h += `<div class="ref-cat ${open ? "open" : ""}" data-cat="${esc(c)}"><span class="caret">${open ? "▾" : "▸"}</span>${esc(c)} <span class="count">${items.length}</span></div>`;
     if (!open) continue;
