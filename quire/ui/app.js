@@ -288,7 +288,8 @@ function renderResult(res) {
     out.innerHTML = (res.outputs || []).map(o => {
       let h = o.head ? katexHtml(`${o.head} = ${o.latex}`) : katexHtml(o.latex);
       if (o.approx) h += `<span class="approx">${katexHtml(`\\approx ${o.approx}`)}</span>`;
-      return `<div class="out-line">${h}</div>`;
+      const notes = (o.notes || []).map(n => `<div class="note">${esc(n)}</div>`).join("");
+      return `<div class="out-line">${h}</div>${notes}`;
     }).join("");
     warn.textContent = res.warning || "";
     const parts = [];

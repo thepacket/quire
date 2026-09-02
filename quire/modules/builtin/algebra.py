@@ -212,6 +212,18 @@ def _candidates(expr):
             yield alt
     if expr.has(sp.sin, sp.cos, sp.tan):
         yield sp.trigsimp(sp.expand_trig(expr))
+    if expr.has(sp.atan, sp.acot):
+        def flip(t):  # atan(1/x) = sign(x) pi/2 - atan(x) for real x != 0
+            z = t.args[0]
+            if isinstance(z, sp.Pow) and z.exp == -1 and z.base.is_real:
+                if z.base.is_positive:
+                    return sp.pi / 2 - sp.atan(z.base)
+                if z.base.is_negative:
+                    return -sp.pi / 2 - sp.atan(z.base)
+            return t
+
+        yield expr.replace(lambda t: isinstance(t, sp.atan), flip).replace(
+            lambda t: isinstance(t, sp.acot) and t.args[0].is_positive, lambda t: sp.pi / 2 - sp.atan(t.args[0]))
 
 
 def _simplify(expr):

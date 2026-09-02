@@ -222,6 +222,7 @@ class Evaluator:
             if not line.strip():
                 continue
             try:
+                hooks.context["notes"] = []
                 st = classify(line)
                 if st.kind == "assume":
                     outputs.append(self.assume(st, env))
@@ -247,7 +248,10 @@ class Evaluator:
                     env[st.name] = value
                     defines.append(st.name)
                 self.last_values.append(value)
-                outputs.append(self.render(st, value))
+                out = self.render(st, value)
+                if hooks.context.get("notes"):
+                    out["notes"] = list(hooks.context["notes"])
+                outputs.append(out)
             except QuireError as exc:
                 error = str(exc)
                 break

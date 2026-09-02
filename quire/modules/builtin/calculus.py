@@ -4,7 +4,9 @@ import sympy as sp
 from ...engine import units as U
 from ...engine.errors import EvalError
 from .. import hooks
-from ._util import as_list, matrix, prune_piecewise, sym
+from ._util import as_list, matrix, prune_piecewise, sym, with_budget
+
+SYMBOLIC_BUDGET = 8.0  # seconds for sympy's own attempt before backends and numerics get their turn
 
 
 def _diff(f, *args):
@@ -105,9 +107,82 @@ def _ugliness(e) -> int:
     return int(sp.count_ops(e)) + 20 * sum(len(e.atoms(k)) for k in _UGLY)
 
 
+def _series_integrate(f, x, a, b):
+    """Integrals over (0, oo) of g(x)/(exp(c x) -+ 1): expand as a geometric series, integrate termwise, sum.
+
+    This is the Mellin-transform route to Gamma(s) zeta(s) and the Fermi-Dirac analogues.
+    """
+    if a != 0 or b != sp.oo:
+        return None
+    for factor in sp.Mul.make_args(f):
+        if isinstance(factor, sp.Pow) and factor.exp == -1 and isinstance(factor.base, sp.Add) \
+                and len(factor.base.args) == 2:
+            terms = factor.base.args
+            consts = [t for t in terms if t in (1, -1)]
+            exps = [t for t in terms if isinstance(t, sp.exp)]
+            if len(consts) != 1 or len(exps) != 1:
+                continue
+            sign = consts[0]  # 1/(e^cx + 1) or 1/(e^cx - 1)
+            c = sp.simplify(exps[0].args[0] / x)
+            if c.has(x) or c.is_positive is False:
+                continue
+            k = sp.Dummy("k", integer=True, positive=True)
+            g = f / factor
+            term = g * sp.exp(-k * c * x) * ((-1) ** (k + 1) if sign == 1 else 1)
+            piece = sp.integrate(term, (x, 0, sp.oo))
+            if piece.has(sp.Integral):
+                return None
+            piece = sp.powsimp(sp.expand_power_base(piece, force=True), force=True)
+            total = prune_piecewise(sp.summation(piece, (k, 1, sp.oo)), hooks.context.get("bounds", {}))
+            if total.has(sp.Sum) or isinstance(total, sp.Piecewise):
+                total = _dirichlet_sum(piece, k, alternating=(sign == 1))
+                if total is None:
+                    return None
+            return sp.simplify(total)
+    return None
+
+
+def _exceeds(p, threshold) -> bool:
+    """Is p > threshold, using numeric values or the worksheet bounds (assume s > 1)?"""
+    from ._util import _bound_samples
+
+    if p.is_number:
+        return bool(p > threshold)
+    bounds = hooks.context.get("bounds", {})
+    if isinstance(p, sp.Symbol):
+        pts = _bound_samples(p.name, bounds)
+        return bool(pts) and all(v > threshold for v in pts)
+    return False
+
+
+def _dirichlet_sum(piece, k, alternating: bool):
+    """sum c k^(-p) = c zeta(p) for p > 1; sum (-1)^(k+1) c k^(-p) = c (1 - 2^(1-p)) zeta(p) for p > 0."""
+    c, rest = piece.as_independent(k)
+    if alternating:
+        rest = sp.powsimp(rest / (-1) ** (k + 1), force=True)
+        if rest.has(-1):
+            rest = sp.simplify(rest * (-1) ** (k + 1) / (-1) ** (k + 1))
+    if isinstance(rest, sp.Pow) and rest.base == k:
+        p = -rest.exp
+    elif rest == 1 / k:
+        p = sp.S.One
+    else:
+        return None
+    if alternating:
+        return c * (1 - 2 ** (1 - p)) * sp.zeta(p) if _exceeds(p, 0) else None
+    return c * sp.zeta(p) if _exceeds(p, 1) else None
+
+
 def _integrate(f, *args):
     ranges = _ranges(args)
-    res = generic_branch(prune_piecewise(sp.integrate(f, *ranges), hooks.context.get("bounds", {})))
+    res, timed_out = with_budget(SYMBOLIC_BUDGET, sp.integrate, f, *ranges)
+    if timed_out:
+        res = sp.Integral(f, *ranges)
+    res = generic_branch(prune_piecewise(res, hooks.context.get("bounds", {})))
+    if res.has(sp.Integral) and len(ranges) == 1 and isinstance(ranges[0], tuple):
+        alt = _series_integrate(f, *ranges[0])
+        if alt is not None:
+            return alt
     indefinite = any(not isinstance(r, tuple) for r in ranges)
     if res.has(sp.Integral) and res.has(sp.oo, sp.zoo, sp.nan):
         res = sp.Integral(f, *ranges)  # a divergent-looking mix of oo and an unevaluated part: treat as no answer
@@ -119,11 +194,15 @@ def _integrate(f, *args):
             best = min(candidates, key=_ugliness)
             if res.has(sp.Integral) or _ugliness(best) < _ugliness(res):
                 return best
-    if isinstance(res, sp.Integral) and not res.free_symbols and all(isinstance(r, tuple) for r in ranges):
-        # No closed form found; a definite integral with numeric bounds still has a value.
+    if res.has(sp.Integral, sp.meijerg, sp.hyper) and not res.free_symbols \
+            and all(isinstance(r, tuple) for r in ranges):
+        # No usable closed form; a definite integral with numeric bounds still has a value.
+        exact = _recognize_definite(f, ranges)
+        if exact is not None:
+            return exact
         try:
             val = res.evalf()
-            if val.is_number and not val.has(sp.Integral):
+            if val.is_number and not val.has(sp.Integral, sp.meijerg, sp.hyper):
                 return val
         except Exception:  # noqa: BLE001
             pass
@@ -131,6 +210,34 @@ def _integrate(f, *args):
             return sp.Float(_quad(f, ranges), 15)
         except Exception:  # noqa: BLE001
             pass
+    return res
+
+
+def _recognize_definite(f, ranges):
+    """No closed form: evaluate to 50 digits with mpmath and try to name the number (PSLQ)."""
+    import mpmath as mp
+
+    from .recognize import DPS, identify
+
+    if len(ranges) != 1 or f.free_symbols - {ranges[0][0]}:
+        return None
+    x, a, b = ranges[0]
+    try:
+        with mp.workdps(DPS):
+            fn = sp.lambdify(x, f, modules="mpmath")
+            lo = -mp.inf if a == -sp.oo else mp.mpf(str(sp.N(a, DPS)))
+            hi = mp.inf if b == sp.oo else mp.mpf(str(sp.N(b, DPS)))
+            val = mp.quad(fn, [lo, hi])
+            if isinstance(val, mp.mpc):
+                if abs(val.imag) > mp.mpf(10) ** (-(DPS - 10)):
+                    return None
+                val = val.real
+        res = identify(val)
+    except Exception:  # noqa: BLE001
+        return None
+    if res is not None:
+        hooks.context.setdefault("notes", []).append(
+            f"no closed form was found symbolically; this value was recognized numerically from {DPS} digits")
     return res
 
 

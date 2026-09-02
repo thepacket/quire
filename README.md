@@ -59,8 +59,17 @@ Assumptions sharpen simplification: `assume x > 0`, `assume n positive integer`,
 sequences are written `a[n]` (`rsolve(a[n+1] == 2 a[n], a, n, 1)`), and `integral` /
 `derivative` are the unevaluated forms of `integrate` / `diff` (`doit` evaluates them).
 `implicit_diff(x^2 + y^2 == 1, y, x)` differentiates implicitly; `factor(x^2 - 2, sqrt(2))`
-factors over an extension. A definite integral with numeric bounds that has no closed form
-comes back as a decimal instead of an unevaluated integral.
+factors over an extension.
+
+A definite integral with numeric bounds that has no closed form is evaluated to 50
+digits and matched against a small basis of constants (π, ln 2, Catalan, ζ(3), γ, …) with
+an integer-relation search (PSLQ). A match such as `π ln 2 / 8` is returned with a note
+saying it was recognized numerically, evidence rather than proof; otherwise a decimal is
+shown. `recognize(0.6931471805599453)` does the same for any number, and its coefficient
+bound shrinks with the digits you typed so a short decimal cannot be "recognized" by
+coincidence. Integrals over (0, ∞) of `g(x)/(e^x ∓ 1)` are done by series expansion and
+termwise integration, which is how `Γ(s) ζ(s)` comes out. SymPy's own symbolic attempt
+gets an 8 s budget before backends and numerics take over.
 
 Trig functions accept degrees or radians (`sin(30 deg)`). Inverse trig returns radians;
 add `-> deg`.

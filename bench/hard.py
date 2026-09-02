@@ -49,6 +49,15 @@ p(I, "integrate(ln(x)/(1 - x), x, 0, 1)", "-pi^2/6")
 p(I, "integrate(sqrt(x)/(1 + x^2), x, 0, oo)", "sqrt(2) pi/2")
 p(I, "integrate(cos(x)/(1 + x^2), x, -oo, oo)", "pi/e")
 p(I, "integrate(x^2 exp(-x)/(1 + exp(-x))^2, x, -oo, oo)", "pi^2/3")
+p(I, ["assume s > 1", "integrate(x^(s - 1)/(exp(x) + 1), x, 0, oo)"], "gamma(s) (1 - 2^(1 - s)) zeta(s)")
+p(I, "integrate(x^3/(exp(2 x) - 1), x, 0, oo)", "pi^4/240")
+p(I, "integrate(x/(exp(x) + 1), x, 0, oo)", "pi^2/12")
+p(I, "integrate(ln(x)^2/(1 + x^2), x, 0, 1)", "pi^3/16")
+p(I, "integrate(atan(x)^2/x^2, x, 0, 1)", {"ok": True})
+p(I, "recognize(0.6931471805599453094)", "ln(2)")
+p(I, "recognize(1.6449340668482264365)", "pi^2/6")
+p(I, "recognize(0.27219826128795026631)", "pi ln(2)/8")
+p("special-function identities", ["assume x < 0", "simplify(atan(x) + atan(1/x))"], "-pi/2")
 
 # ---------------------------------------------------------------- hard indefinite integrals (checked by differentiation)
 J = "hard antiderivatives"
@@ -148,9 +157,5 @@ p(G, ["assume n positive integer", "simplify((-1)^n (-1)^n)"], "1")
 
 # Known gaps: neither SymPy nor the Maxima backend closes these yet. Tracked, not counted as regressions.
 KNOWN_GAPS = {
-    "assume s > 1 | integrate(x^(s - 1)/(exp(x) - 1), x, 0, oo)": "Gamma(s) zeta(s): neither SymPy nor Maxima",
-    "integrate(ln(1 + x^2)/(1 + x^2), x, 0, oo)": "SymPy returns a Meijer G term; Maxima leaves it unevaluated",
-    "integrate(ln(1 + x)/(1 + x^2), x, 0, 1)": "SymPy hangs; Maxima gives a complex polylog form",
     "simplify(besselj(n, x) diff(bessely(n, x), x) - bessely(n, x) diff(besselj(n, x), x))": "Bessel Wronskian not known to SymPy",
-    "assume x > 0 | simplify(atan(x) + atan(1/x))": "no arctangent addition rule in SymPy or Maxima",
 }

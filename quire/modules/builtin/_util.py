@@ -103,3 +103,40 @@ def prune_piecewise(res, bounds: dict):
     if len(kept) == 1:
         return kept[0][0]
     return sp.Piecewise(*kept) if kept else res
+
+
+class Budget(BaseException):
+    """Raised inside with_budget when the time budget is exhausted (BaseException: not swallowed by handlers)."""
+
+
+def with_budget(seconds: float, fn, *args, **kwargs):
+    """Run fn with a SIGALRM time budget. Returns (result, timed_out).
+
+    Only the main thread can use signals; elsewhere fn runs unbounded. An outer
+    alarm (e.g. the benchmark runner's) is saved and re-armed afterwards.
+    """
+    import signal
+    import threading
+    import time
+
+    if threading.current_thread() is not threading.main_thread():
+        return fn(*args, **kwargs), False
+    old_handler = signal.getsignal(signal.SIGALRM)
+    remaining = signal.alarm(0)
+    start = time.monotonic()
+
+    def handler(*_):
+        raise Budget()
+
+    signal.signal(signal.SIGALRM, handler)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        return fn(*args, **kwargs), False
+    except Budget:
+        return None, True
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_handler)
+        if remaining:
+            left = max(1, int(remaining - (time.monotonic() - start)))
+            signal.alarm(left)
