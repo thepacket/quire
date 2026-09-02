@@ -192,15 +192,27 @@ pre.diff { font-family: var(--mono); font-size: 12.5px; margin: 2px 0; padding: 
 pre.diff .add { color: #1f7a4f; background: #e6f6ee; display: block; } pre.diff .del { color: #a33; background: #fdeeee; display: block; } pre.diff .same { color: #555; display: block; }
 .modal-box.wide { width: 720px; }
 
+.src-print, .print-img { display: none; }
+
 @media print {
-  .topbar, .palette, .ref, .status, .tools, .adder, .add-end, .modal, .plot-form, .annot-wrap, .legend .lg.off, .slider-row, .meta, textarea.src { display: none !important; }
-  body, main { background: #fff; overflow: visible; }
-  main { padding: 0; }
+  @page { margin: 16mm; }
+  html, body { height: auto; display: block; background: #fff; }
   .layout { display: block; }
-  .cell { break-inside: avoid; background: none; }
-  .cell.math::before { content: attr(data-src); display: block; font-family: var(--mono); font-size: 12.5px; color: #374151; white-space: pre-wrap; padding: 0 10px; }
+  main { overflow: visible; padding: 0; }
+  #cells, .titleblock { max-width: none; margin: 0; padding-left: 0; }
+  .titleblock { padding-bottom: 6px; margin-bottom: 12px; border-bottom: 1px solid #ddd; }
+  .titleblock h1 { font-size: 24px; }
+  .topbar, .palette, .ref, .status, .tools, .adder, .add-end, .modal, .plot-form, .annot-wrap, .legend .lg.off, .slider-row, .meta,
+  textarea.src, .gutter, .shared-badge, .ac, .gloss, .tip, .cell.check details.author, .check-row .check-btn, .plotly-box { display: none !important; }
+  .cell { display: block; padding: 4px 0 4px 10px; margin: 0 0 10px; border-left-width: 2px; border-radius: 0; break-inside: avoid; background: none; }
+  .cell.math .src-print { display: block; font-family: var(--mono); font-size: 12px; color: #374151; white-space: pre-wrap; margin: 0 0 2px; padding: 0 10px; }
   .md, .out { display: block !important; }
-  svg.plot, .plotly-box { max-width: 100%; }
+  .out { font-size: 15px; padding-top: 2px; }
+  .check-row input.answer { border: none; padding: 0; font-size: 14px; background: none; }
+  svg.plot { max-width: 100%; break-inside: avoid; }
+  .print-img { display: block !important; max-width: 100%; width: 700px; border: 1px solid #ddd; border-radius: 6px; break-inside: avoid; }
+  .legend { font-size: 12px; }
+  a[href]::after { content: none; }
 }
 
 /* read-only share links */
@@ -269,4 +281,3 @@ body.shared .cell.check details.author { display: none !important; }
 .gloss .doc { color: #4b5563; margin: 3px 0; }
 .gloss .ex { font-family: var(--mono); font-size: 12px; color: var(--accent); cursor: pointer; }
 .gloss .ex:hover { text-decoration: underline; }
-@media print { .cell.check details.author { display: none !important; } }

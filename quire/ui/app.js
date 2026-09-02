@@ -219,13 +219,13 @@ function keyNav(cell, ta, ev) {
 }
 
 function buildMath(cell, body) {
-  body.innerHTML = `<textarea class="src" rows="1" spellcheck="false" placeholder="e.g.  F = m a        or        solve(x^2 == 4, x)"></textarea>
+  body.innerHTML = `<textarea class="src" rows="1" spellcheck="false" placeholder="e.g.  F = m a        or        solve(x^2 == 4, x)"></textarea><pre class="src-print"></pre>
     <div class="out"></div><div class="warn"></div><div class="err"></div><div class="meta"></div>`;
-  const ta = $("textarea", body);
+  const ta = $("textarea", body), srcPrint = $(".src-print", body);
   ta.value = cell.source || "";
   if (state.share) ta.readOnly = true;
-  body.parentElement.dataset.src = cell.source || "";  // shown instead of the textarea when printing
-  ta.addEventListener("input", () => { cell.source = ta.value; body.parentElement.dataset.src = ta.value; autogrow(ta); touch(); acShow(ta); previewMath(cell, body); });
+  srcPrint.textContent = cell.source || "";  // shown instead of the textarea when printing
+  ta.addEventListener("input", () => { cell.source = ta.value; srcPrint.textContent = ta.value; autogrow(ta); touch(); acShow(ta); previewMath(cell, body); });
   ta.addEventListener("keydown", ev => { if (acKey(ev)) return; keyNav(cell, ta, ev); });
   ta.addEventListener("focus", () => { state.activeInput = ta; });
   ta.addEventListener("blur", () => setTimeout(acClose, 120));
@@ -287,6 +287,7 @@ function buildText(cell, body) {
   };
   body._show = show;
   const edit = () => { if (state.share) return; md.style.display = "none"; ta.style.display = ""; autogrow(ta); ta.focus(); };
+  window.addEventListener("beforeprint", () => { if (document.activeElement === ta) ta.blur(); });
   ta.addEventListener("input", () => { cell.source = ta.value; autogrow(ta); setDirty(true); if (/\{\{/.test(ta.value)) scheduleEval(); });
   ta.addEventListener("blur", show);
   ta.addEventListener("keydown", ev => {
@@ -951,6 +952,10 @@ async function drawPlotly(el, cell, res, legend) {
   }
   await Plotly.react(box, traces, layout, { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d", "toImage"] });
   if (!box._wired) { box._wired = true; box.on("plotly_relayout", ev => { if (ev["scene.camera"]) box._camera = ev["scene.camera"]; }); }
+  // a picture of the plot for printing (WebGL canvases print blank)
+  let img = $(".print-img", el);
+  if (!img) { img = document.createElement("img"); img.className = "print-img"; img.alt = "plot"; box.parentElement.appendChild(img); }
+  Plotly.toImage(box, { format: "png", width: 900, height: three ? 560 : 500 }).then(url => { if (state.results.get(cell.id) === res) img.src = url; }).catch(() => {});
   legend.innerHTML = res.series.map((s, k) => ({ s, k })).filter(({ s }) => s.label && s.type !== "sphere")
     .map(({ s, k }) => `<span class="lg">${s.type === "grid" ? "" : `<span class="swatch" style="background:${PALETTE[k % PALETTE.length]}"></span>`}${katexHtml(s.label)}</span>`).join("");
   legend.onclick = null;
